@@ -1,0 +1,136 @@
+file 5562 1720414925                                            
+version 3
+run BurstyTraffic-0-20240708-14:02:03-12464
+attr configname BurstyTraffic
+attr datetime 20240708-14:02:03
+attr datetimef 20240708-140203
+attr experiment BurstyTraffic
+attr inifile omnetpp.ini
+attr iterationvars ""
+attr iterationvarsd ""
+attr iterationvarsf ""
+attr measurement ""
+attr network UdpAppExample
+attr processid 12464
+attr repetition 0
+attr replication #0
+attr resultdir results
+attr runnumber 0
+attr seedset 0
+config image-path ../../../images
+config *.server.app[0].typename UdpApp
+config *.server.app[0].io.localPort 1000
+config *.server.app[0].io.destAddress "\"client\""
+config *.server.app[0].io.destPort 1000
+config *.server.app[0].source.typename BurstyPacketProducer
+config *.server.app[0].source.normalProducer.productionInterval 1s
+config *.server.app[0].source.normalProducer.packetLength 100B
+config *.server.app[0].source.burstProducer.productionInterval 0.1s
+config *.server.app[0].source.burstProducer.packetLength 1000B
+config *.server.app[0].source.scheduler.waitIntervals "\"40 4\""
+config *.server.app[0].source.scheduler.transitionProbabilities "\"0 1 1 0\""
+config network UdpAppExample
+config *.*.numApps 1
+config *.client.app[0].typename UdpApp
+config *.client.app[0].io.localPort 1000
+config *.client.app[0].io.destAddress "\"server\""
+config *.client.app[0].io.destPort 1000
+config *.client.app[0].source.productionInterval 1s
+config *.client.app[0].source.packetLength "intuniform(100B, 200B)"
+config *.client.app[0].source.packetData "intuniform(0, 1)"
+
+vector 0 UdpAppExample.client.ppp[0].queue queueLength:vector ETV
+attr autoWarmupFilter false
+attr interpolationmode sample-hold
+attr recordingmode vector
+attr source "warmup(atomic(constant0(packetPushEnded) + count(packetPushStarted) - count(packetPulled) - count(packetRemoved) - count(packetDropped)))"
+attr title "queue length"
+attr unit pk
+vector 1 UdpAppExample.client.ppp[0].queue queueBitLength:vector ETV
+attr autoWarmupFilter false
+attr interpolationmode sample-hold
+attr recordingmode vector
+attr source "warmup(atomic(constant0(packetPushEnded) + sum(packetLength(packetPushStarted)) - sum(packetLength(packetPulled)) - sum(packetLength(packetRemoved)) - sum(packetLength(packetDropped))))"
+attr title "queue bit length"
+attr unit b
+vector 2 UdpAppExample.client.ppp[0].ppp transmissionState:vector ETV
+attr interpolationmode sample-hold
+attr recordingmode vector
+attr source transmissionStateChanged
+attr title "tx state"
+vector 3 UdpAppExample.client.udp passedUpPk:vector(count) ETV
+attr interpolationmode none
+attr recordingmode vector(count)
+attr source packetSentToUpper
+attr title "packets passed up, count"
+vector 4 UdpAppExample.client.udp droppedPkWrongPort:vector(count) ETV
+attr interpolationmode none
+attr recordingmode vector(count)
+attr source packetDropReasonIsNoPortFound(packetDropped)
+attr title "packets dropped (wrong port), count"
+vector 5 UdpAppExample.client.udp droppedPkBadChecksum:vector(count) ETV
+attr interpolationmode none
+attr recordingmode vector(count)
+attr source packetDropReasonIsIncorrectlyReceived(packetDropped)
+attr title "packets dropped (checksum error), count"
+vector 6 UdpAppExample.server.ppp[0].queue queueLength:vector ETV
+attr autoWarmupFilter false
+attr interpolationmode sample-hold
+attr recordingmode vector
+attr source "warmup(atomic(constant0(packetPushEnded) + count(packetPushStarted) - count(packetPulled) - count(packetRemoved) - count(packetDropped)))"
+attr title "queue length"
+attr unit pk
+vector 7 UdpAppExample.server.ppp[0].queue queueBitLength:vector ETV
+attr autoWarmupFilter false
+attr interpolationmode sample-hold
+attr recordingmode vector
+attr source "warmup(atomic(constant0(packetPushEnded) + sum(packetLength(packetPushStarted)) - sum(packetLength(packetPulled)) - sum(packetLength(packetRemoved)) - sum(packetLength(packetDropped))))"
+attr title "queue bit length"
+attr unit b
+vector 8 UdpAppExample.server.ppp[0].ppp transmissionState:vector ETV
+attr interpolationmode sample-hold
+attr recordingmode vector
+attr source transmissionStateChanged
+attr title "tx state"
+vector 9 UdpAppExample.server.udp passedUpPk:vector(count) ETV
+attr interpolationmode none
+attr recordingmode vector(count)
+attr source packetSentToUpper
+attr title "packets passed up, count"
+vector 10 UdpAppExample.server.udp droppedPkWrongPort:vector(count) ETV
+attr interpolationmode none
+attr recordingmode vector(count)
+attr source packetDropReasonIsNoPortFound(packetDropped)
+attr title "packets dropped (wrong port), count"
+vector 11 UdpAppExample.server.udp droppedPkBadChecksum:vector(count) ETV
+attr interpolationmode none
+attr recordingmode vector(count)
+attr source packetDropReasonIsIncorrectlyReceived(packetDropped)
+attr title "packets dropped (checksum error), count"
+vector 12 UdpAppExample.client.app[0].source packetLengths:vector ETV
+attr interpolationmode none
+attr recordingmode vector
+attr source packetLength(packetPushed)
+attr title "packet lengths"
+attr unit b
+vector 13 UdpAppExample.server.app[0].source.normalProducer packetLengths:vector ETV
+attr interpolationmode none
+attr recordingmode vector
+attr source packetLength(packetPushed)
+attr title "packet lengths"
+attr unit b
+0	5281 45 0 0 0 0 5 0 0 0 0
+1	5326 45 0 0 0 0 5 0 0 0 0
+2	5371 9 0 0 0 0 1 0 0 0 0
+3	5380 9 0 0 0 0 1 0 0 0 0
+4	5389 9 0 0 0 0 1 0 0 0 0
+5	5398 9 0 0 0 0 1 0 0 0 0
+6	5407 45 0 0 0 0 5 0 0 0 0
+7	5452 45 0 0 0 0 5 0 0 0 0
+8	5497 9 0 0 0 0 1 0 0 0 0
+9	5506 9 0 0 0 0 1 0 0 0 0
+10	5515 10 0 0 0 0 1 0 0 0 0
+11	5525 10 0 0 0 0 1 0 0 0 0
+12	5535 13 0 0 0 0 1 1152 1152 1152 1327104
+13	5548 12 0 0 0 0 1 800 800 800 640000
+

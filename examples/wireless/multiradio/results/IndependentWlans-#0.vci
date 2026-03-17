@@ -1,0 +1,752 @@
+file 22296717 1721096060                                        
+version 3
+run IndependentWlans-0-20240716-11:05:35-15560
+attr configname IndependentWlans
+attr datetime 20240716-11:05:35
+attr datetimef 20240716-110535
+attr experiment IndependentWlans
+attr inifile omnetpp.ini
+attr iterationvars ""
+attr iterationvarsd ""
+attr iterationvarsf ""
+attr measurement ""
+attr network MultiRadio
+attr processid 15560
+attr repetition 0
+attr replication #0
+attr resultdir results
+attr runnumber 0
+attr seedset 0
+config image-path ../../../images
+config description "Two independent WLANs on different radio channels"
+config *.useEthernetSwitching false
+config *.useRouting false
+config network MultiRadio
+config **.constraintAreaMinX 0m
+config **.constraintAreaMinY 0m
+config **.constraintAreaMinZ 0m
+config **.constraintAreaMaxX 500m
+config **.constraintAreaMaxY 300m
+config **.constraintAreaMaxZ 0m
+config *.*.mobility.typename StationaryMobility
+config *.host1.mobility.initialX 50m
+config *.host1.mobility.initialY 100m
+config *.host2.mobility.initialX 450m
+config *.host2.mobility.initialY 100m
+config *.accessPoint1.mobility.initialX 150m
+config *.accessPoint1.mobility.initialY 250m
+config *.accessPoint2.mobility.initialX 350m
+config *.accessPoint2.mobility.initialY 250m
+config **.analogModel.ignorePartialInterference true
+config *.accessPoint1.wlan[0].address "\"001111111111\""
+config *.accessPoint1.wlan[0].mgmt.ssid "\"alpha\""
+config *.accessPoint1.wlan[0].radio.channelNumber 0
+config *.accessPoint2.wlan[0].address "\"002222222222\""
+config *.accessPoint2.wlan[0].radio.channelNumber 1
+config *.accessPoint2.wlan[0].mgmt.ssid "\"beta\""
+config *.host1.wlan[0].mgmt.accessPointAddress "\"001111111111\""
+config *.host1.wlan[0].radio.channelNumber 0
+config *.host2.wlan[0].mgmt.accessPointAddress "\"002222222222\""
+config *.host2.wlan[0].radio.channelNumber 1
+config *.host*.**.mgmt.typename Ieee80211MgmtStaSimplified
+config *.host*.**.agent.typename ""
+config *.accessPoint*.**.mgmt.typename Ieee80211MgmtApSimplified
+config **.wlan*.bitrate 11Mbps
+config **.host*.numApps 1
+config **.app[0].typename PingApp
+config *.host1.app[0].destAddr "\"host2\""
+config **.printPing true
+config *.useEthernetSwitching false
+config *.useRouting true
+config *.configurator.config "xmldoc(\"network.xml\")"
+
+vector 0 MultiRadio.host1.wlan[0].mac.dcf frameSequenceActive:vector ETV
+attr autoWarmupFilter false
+attr interpolationmode sample-hold
+attr recordingmode vector
+attr source warmup(count(frameSequenceStarted)-count(frameSequenceFinished))
+attr title "frame sequence active"
+vector 1 MultiRadio.host1.wlan[0].mac.dcf.channelAccess.pendingQueue queueLength:vector ETV
+attr autoWarmupFilter false
+attr interpolationmode sample-hold
+attr recordingmode vector
+attr source "warmup(atomic(constant0(packetPushEnded) + count(packetPushStarted) - count(packetPulled) - count(packetRemoved) - count(packetDropped)))"
+attr title "queue length"
+attr unit pk
+vector 2 MultiRadio.host1.wlan[0].mac.dcf.channelAccess.pendingQueue queueBitLength:vector ETV
+attr autoWarmupFilter false
+attr interpolationmode sample-hold
+attr recordingmode vector
+attr source "warmup(atomic(constant0(packetPushEnded) + sum(packetLength(packetPushStarted)) - sum(packetLength(packetPulled)) - sum(packetLength(packetRemoved)) - sum(packetLength(packetDropped))))"
+attr title "queue bit length"
+attr unit b
+vector 3 MultiRadio.host1.wlan[0].mac.dcf.channelAccess.inProgressFrames queueLength:vector ETV
+attr autoWarmupFilter false
+attr interpolationmode sample-hold
+attr recordingmode vector
+attr source "warmup(count(packetEnqueued) - count(packetDequeued))"
+attr title "queue length"
+vector 4 MultiRadio.host1.wlan[0].mac.dcf.channelAccess.contention backoffActive:vector ETV
+attr autoWarmupFilter false
+attr interpolationmode sample-hold
+attr recordingmode vector
+attr source warmup(count(backoffStarted)-count(backoffStopped))
+attr title "backoff active"
+vector 5 MultiRadio.host1.udp passedUpPk:vector(count) ETV
+attr interpolationmode none
+attr recordingmode vector(count)
+attr source packetSentToUpper
+attr title "packets passed up, count"
+vector 6 MultiRadio.host1.udp droppedPkWrongPort:vector(count) ETV
+attr interpolationmode none
+attr recordingmode vector(count)
+attr source packetDropReasonIsNoPortFound(packetDropped)
+attr title "packets dropped (wrong port), count"
+vector 7 MultiRadio.host1.udp droppedPkBadChecksum:vector(count) ETV
+attr interpolationmode none
+attr recordingmode vector(count)
+attr source packetDropReasonIsIncorrectlyReceived(packetDropped)
+attr title "packets dropped (checksum error), count"
+vector 8 MultiRadio.host2.wlan[0].mac.dcf frameSequenceActive:vector ETV
+attr autoWarmupFilter false
+attr interpolationmode sample-hold
+attr recordingmode vector
+attr source warmup(count(frameSequenceStarted)-count(frameSequenceFinished))
+attr title "frame sequence active"
+vector 9 MultiRadio.host2.wlan[0].mac.dcf.channelAccess.pendingQueue queueLength:vector ETV
+attr autoWarmupFilter false
+attr interpolationmode sample-hold
+attr recordingmode vector
+attr source "warmup(atomic(constant0(packetPushEnded) + count(packetPushStarted) - count(packetPulled) - count(packetRemoved) - count(packetDropped)))"
+attr title "queue length"
+attr unit pk
+vector 10 MultiRadio.host2.wlan[0].mac.dcf.channelAccess.pendingQueue queueBitLength:vector ETV
+attr autoWarmupFilter false
+attr interpolationmode sample-hold
+attr recordingmode vector
+attr source "warmup(atomic(constant0(packetPushEnded) + sum(packetLength(packetPushStarted)) - sum(packetLength(packetPulled)) - sum(packetLength(packetRemoved)) - sum(packetLength(packetDropped))))"
+attr title "queue bit length"
+attr unit b
+vector 11 MultiRadio.host2.wlan[0].mac.dcf.channelAccess.inProgressFrames queueLength:vector ETV
+attr autoWarmupFilter false
+attr interpolationmode sample-hold
+attr recordingmode vector
+attr source "warmup(count(packetEnqueued) - count(packetDequeued))"
+attr title "queue length"
+vector 12 MultiRadio.host2.wlan[0].mac.dcf.channelAccess.contention backoffActive:vector ETV
+attr autoWarmupFilter false
+attr interpolationmode sample-hold
+attr recordingmode vector
+attr source warmup(count(backoffStarted)-count(backoffStopped))
+attr title "backoff active"
+vector 13 MultiRadio.host2.udp passedUpPk:vector(count) ETV
+attr interpolationmode none
+attr recordingmode vector(count)
+attr source packetSentToUpper
+attr title "packets passed up, count"
+vector 14 MultiRadio.host2.udp droppedPkWrongPort:vector(count) ETV
+attr interpolationmode none
+attr recordingmode vector(count)
+attr source packetDropReasonIsNoPortFound(packetDropped)
+attr title "packets dropped (wrong port), count"
+vector 15 MultiRadio.host2.udp droppedPkBadChecksum:vector(count) ETV
+attr interpolationmode none
+attr recordingmode vector(count)
+attr source packetDropReasonIsIncorrectlyReceived(packetDropped)
+attr title "packets dropped (checksum error), count"
+vector 16 MultiRadio.accessPoint1.wlan[0].mac.dcf frameSequenceActive:vector ETV
+attr autoWarmupFilter false
+attr interpolationmode sample-hold
+attr recordingmode vector
+attr source warmup(count(frameSequenceStarted)-count(frameSequenceFinished))
+attr title "frame sequence active"
+vector 17 MultiRadio.accessPoint1.wlan[0].mac.dcf.channelAccess.pendingQueue queueLength:vector ETV
+attr autoWarmupFilter false
+attr interpolationmode sample-hold
+attr recordingmode vector
+attr source "warmup(atomic(constant0(packetPushEnded) + count(packetPushStarted) - count(packetPulled) - count(packetRemoved) - count(packetDropped)))"
+attr title "queue length"
+attr unit pk
+vector 18 MultiRadio.accessPoint1.wlan[0].mac.dcf.channelAccess.pendingQueue queueBitLength:vector ETV
+attr autoWarmupFilter false
+attr interpolationmode sample-hold
+attr recordingmode vector
+attr source "warmup(atomic(constant0(packetPushEnded) + sum(packetLength(packetPushStarted)) - sum(packetLength(packetPulled)) - sum(packetLength(packetRemoved)) - sum(packetLength(packetDropped))))"
+attr title "queue bit length"
+attr unit b
+vector 19 MultiRadio.accessPoint1.wlan[0].mac.dcf.channelAccess.inProgressFrames queueLength:vector ETV
+attr autoWarmupFilter false
+attr interpolationmode sample-hold
+attr recordingmode vector
+attr source "warmup(count(packetEnqueued) - count(packetDequeued))"
+attr title "queue length"
+vector 20 MultiRadio.accessPoint1.wlan[0].mac.dcf.channelAccess.contention backoffActive:vector ETV
+attr autoWarmupFilter false
+attr interpolationmode sample-hold
+attr recordingmode vector
+attr source warmup(count(backoffStarted)-count(backoffStopped))
+attr title "backoff active"
+vector 21 MultiRadio.accessPoint2.wlan[0].mac.dcf frameSequenceActive:vector ETV
+attr autoWarmupFilter false
+attr interpolationmode sample-hold
+attr recordingmode vector
+attr source warmup(count(frameSequenceStarted)-count(frameSequenceFinished))
+attr title "frame sequence active"
+vector 22 MultiRadio.accessPoint2.wlan[0].mac.dcf.channelAccess.pendingQueue queueLength:vector ETV
+attr autoWarmupFilter false
+attr interpolationmode sample-hold
+attr recordingmode vector
+attr source "warmup(atomic(constant0(packetPushEnded) + count(packetPushStarted) - count(packetPulled) - count(packetRemoved) - count(packetDropped)))"
+attr title "queue length"
+attr unit pk
+vector 23 MultiRadio.accessPoint2.wlan[0].mac.dcf.channelAccess.pendingQueue queueBitLength:vector ETV
+attr autoWarmupFilter false
+attr interpolationmode sample-hold
+attr recordingmode vector
+attr source "warmup(atomic(constant0(packetPushEnded) + sum(packetLength(packetPushStarted)) - sum(packetLength(packetPulled)) - sum(packetLength(packetRemoved)) - sum(packetLength(packetDropped))))"
+attr title "queue bit length"
+attr unit b
+vector 24 MultiRadio.accessPoint2.wlan[0].mac.dcf.channelAccess.inProgressFrames queueLength:vector ETV
+attr autoWarmupFilter false
+attr interpolationmode sample-hold
+attr recordingmode vector
+attr source "warmup(count(packetEnqueued) - count(packetDequeued))"
+attr title "queue length"
+vector 25 MultiRadio.accessPoint2.wlan[0].mac.dcf.channelAccess.contention backoffActive:vector ETV
+attr autoWarmupFilter false
+attr interpolationmode sample-hold
+attr recordingmode vector
+attr source warmup(count(backoffStarted)-count(backoffStopped))
+attr title "backoff active"
+vector 26 MultiRadio.host1.wlan[0].radio radioMode:vector ETV
+attr interpolationmode sample-hold
+attr recordingmode vector
+attr source radioModeChanged
+attr title "Radio mode"
+vector 27 MultiRadio.host1.wlan[0].radio radioChannel:vector ETV
+attr interpolationmode sample-hold
+attr recordingmode vector
+attr source radioChannelChanged
+attr title "Radio channel"
+vector 28 MultiRadio.host2.wlan[0].radio radioMode:vector ETV
+attr interpolationmode sample-hold
+attr recordingmode vector
+attr source radioModeChanged
+attr title "Radio mode"
+vector 29 MultiRadio.host2.wlan[0].radio radioChannel:vector ETV
+attr interpolationmode sample-hold
+attr recordingmode vector
+attr source radioChannelChanged
+attr title "Radio channel"
+vector 30 MultiRadio.accessPoint1.wlan[0].radio radioMode:vector ETV
+attr interpolationmode sample-hold
+attr recordingmode vector
+attr source radioModeChanged
+attr title "Radio mode"
+vector 31 MultiRadio.accessPoint1.wlan[0].radio radioChannel:vector ETV
+attr interpolationmode sample-hold
+attr recordingmode vector
+attr source radioChannelChanged
+attr title "Radio channel"
+vector 32 MultiRadio.accessPoint2.wlan[0].radio radioMode:vector ETV
+attr interpolationmode sample-hold
+attr recordingmode vector
+attr source radioModeChanged
+attr title "Radio mode"
+vector 33 MultiRadio.accessPoint2.wlan[0].radio radioChannel:vector ETV
+attr interpolationmode sample-hold
+attr recordingmode vector
+attr source radioChannelChanged
+attr title "Radio channel"
+vector 34 MultiRadio.host1.wlan[0].radio receptionState:vector ETV
+attr interpolationmode sample-hold
+attr recordingmode vector
+attr source receptionStateChanged
+attr title "Radio reception state"
+vector 35 MultiRadio.host1.wlan[0].mac.dcf.channelAccess.contention stateChanged:vector ETV
+attr enum IDLE,DEFER,IFS_AND_BACKOFF
+attr interpolationmode none
+attr recordingmode vector
+attr title "contention state changed"
+attr type enum
+vector 36 MultiRadio.host2.wlan[0].radio receptionState:vector ETV
+attr interpolationmode sample-hold
+attr recordingmode vector
+attr source receptionStateChanged
+attr title "Radio reception state"
+vector 37 MultiRadio.host2.wlan[0].mac.dcf.channelAccess.contention stateChanged:vector ETV
+attr enum IDLE,DEFER,IFS_AND_BACKOFF
+attr interpolationmode none
+attr recordingmode vector
+attr title "contention state changed"
+attr type enum
+vector 38 MultiRadio.accessPoint1.wlan[0].radio receptionState:vector ETV
+attr interpolationmode sample-hold
+attr recordingmode vector
+attr source receptionStateChanged
+attr title "Radio reception state"
+vector 39 MultiRadio.accessPoint1.wlan[0].mac.dcf.channelAccess.contention stateChanged:vector ETV
+attr enum IDLE,DEFER,IFS_AND_BACKOFF
+attr interpolationmode none
+attr recordingmode vector
+attr title "contention state changed"
+attr type enum
+vector 40 MultiRadio.accessPoint2.wlan[0].radio receptionState:vector ETV
+attr interpolationmode sample-hold
+attr recordingmode vector
+attr source receptionStateChanged
+attr title "Radio reception state"
+vector 41 MultiRadio.accessPoint2.wlan[0].mac.dcf.channelAccess.contention stateChanged:vector ETV
+attr enum IDLE,DEFER,IFS_AND_BACKOFF
+attr interpolationmode none
+attr recordingmode vector
+attr title "contention state changed"
+attr type enum
+vector 42 MultiRadio.host1.wlan[0].mac.dcf.recoveryProcedure contentionWindowChanged:vector ETV
+attr interpolationmode sample-hold
+attr recordingmode vector
+attr title "contention window"
+vector 43 MultiRadio.host2.wlan[0].mac.dcf.recoveryProcedure contentionWindowChanged:vector ETV
+attr interpolationmode sample-hold
+attr recordingmode vector
+attr title "contention window"
+vector 44 MultiRadio.accessPoint1.wlan[0].mac.dcf.recoveryProcedure contentionWindowChanged:vector ETV
+attr interpolationmode sample-hold
+attr recordingmode vector
+attr title "contention window"
+vector 45 MultiRadio.accessPoint2.wlan[0].mac.dcf.recoveryProcedure contentionWindowChanged:vector ETV
+attr interpolationmode sample-hold
+attr recordingmode vector
+attr title "contention window"
+vector 46 MultiRadio.host1.app[0] pingTxSeq:vector ETV
+attr interpolationmode none
+attr recordingmode vector
+attr title "ping tx seq"
+vector 47 MultiRadio.host1.ipv4.arp arpRequestSent:vector(packetBytes) ETV
+attr recordingmode vector(packetBytes)
+attr source arpRequestSent
+attr title "ARP request sent, packetBytes"
+vector 48 MultiRadio.host1.wlan[0].mac packetReceivedFromUpper:vector(packetBytes) ETV
+attr interpolationmode none
+attr recordingmode vector(packetBytes)
+attr title "packets received from upper layer, packetBytes"
+vector 49 MultiRadio.host1.wlan[0].mac.dcf.channelAccess.pendingQueue incomingPacketLengths:vector ETV
+attr interpolationmode none
+attr recordingmode vector
+attr source packetLength(packetPushStarted)
+attr title "incoming packet lengths"
+attr unit b
+vector 50 MultiRadio.host1.wlan[0].mac.dcf.channelAccess.pendingQueue incomingDataRate:vector ETV
+attr interpolationmode linear
+attr recordingmode vector
+attr source throughput(packetPushStarted)
+attr title "incoming datarate"
+attr unit bps
+vector 51 MultiRadio.host1.wlan[0].mac.dcf.channelAccess.contention backoffPeriodGenerated:vector ETV
+attr interpolationmode none
+attr recordingmode vector
+attr title "backoff periods"
+vector 52 MultiRadio.host1.wlan[0].mac.dcf.channelAccess.pendingQueue queueingTime:vector ETV
+attr interpolationmode none
+attr recordingmode vector
+attr source queueingTime(packetPulled)
+attr title "queueing times"
+attr unit s
+vector 53 MultiRadio.host1.wlan[0].mac.dcf.channelAccess.pendingQueue outgoingPacketLengths:vector ETV
+attr interpolationmode none
+attr recordingmode vector
+attr source packetLength(packetPulled)
+attr title "outgoing packet lengths"
+attr unit b
+vector 54 MultiRadio.host1.wlan[0].mac.dcf.channelAccess.pendingQueue outgoingDataRate:vector ETV
+attr interpolationmode linear
+attr recordingmode vector
+attr source throughput(packetPulled)
+attr title "outgoing datarate"
+attr unit bps
+vector 55 MultiRadio.host1.wlan[0].mac.dcf datarateSelected:vector ETV
+attr interpolationmode none
+attr recordingmode vector
+attr title "datarates selected"
+vector 56 MultiRadio.host1.wlan[0].mac packetSentToLower:vector(packetBytes) ETV
+attr interpolationmode none
+attr recordingmode vector(packetBytes)
+attr title "packets sent to lower layer, packetBytes"
+vector 57 MultiRadio.host1.wlan[0].radio transmissionState:vector ETV
+attr interpolationmode sample-hold
+attr recordingmode vector
+attr source transmissionStateChanged
+attr title "Radio transmission state"
+vector 58 MultiRadio.host1.wlan[0].mac.dcf packetSentToPeer:vector(packetBytes) ETV
+attr interpolationmode none
+attr recordingmode vector(packetBytes)
+attr title "packets sent, packetBytes"
+vector 59 MultiRadio.host1.wlan[0].mac.dcf packetSentToPeerUnicast:vector(packetBytes) ETV
+attr interpolationmode none
+attr recordingmode vector(packetBytes)
+attr source ieee80211Unicast(packetSentToPeer)
+attr title "packets sent: unicast, packetBytes"
+vector 60 MultiRadio.host1.wlan[0].mac.dcf packetSentToPeerWithoutRetry:vector(packetBytes) ETV
+attr interpolationmode none
+attr recordingmode vector(packetBytes)
+attr source ieee80211NotRetry(packetSentToPeer)
+attr title "packets sent: without retry, packetBytes"
+vector 61 MultiRadio.host1.wlan[0].mac.rx nav:vector ETV
+attr interpolationmode linear
+attr recordingmode vector
+attr source navChanged
+attr title "network allocation vector"
+vector 62 MultiRadio.accessPoint1.wlan[0].mac packetReceivedFromLower:vector(packetBytes) ETV
+attr interpolationmode none
+attr recordingmode vector(packetBytes)
+attr title "packets received from lower layer, packetBytes"
+vector 63 MultiRadio.accessPoint1.wlan[0].mac.dcf packetReceivedFromPeer:vector(packetBytes) ETV
+attr interpolationmode none
+attr recordingmode vector(packetBytes)
+attr title "packets received, packetBytes"
+vector 64 MultiRadio.accessPoint1.wlan[0].mac.dcf packetReceivedFromPeerUnicast:vector(packetBytes) ETV
+attr interpolationmode none
+attr recordingmode vector(packetBytes)
+attr source ieee80211Unicast(packetReceivedFromPeer)
+attr title "packets received: unicast, packetBytes"
+vector 65 MultiRadio.accessPoint1.wlan[0].mac.dcf packetReceivedFromPeerWithoutRetry:vector(packetBytes) ETV
+attr interpolationmode none
+attr recordingmode vector(packetBytes)
+attr source ieee80211NotRetry(packetReceivedFromPeer)
+attr title "packets received: without retry, packetBytes"
+vector 66 MultiRadio.accessPoint1.wlan[0].mac.dcf datarateSelected:vector ETV
+attr interpolationmode none
+attr recordingmode vector
+attr title "datarates selected"
+vector 67 MultiRadio.accessPoint1.wlan[0].mac.dcf.channelAccess.pendingQueue incomingPacketLengths:vector ETV
+attr interpolationmode none
+attr recordingmode vector
+attr source packetLength(packetPushStarted)
+attr title "incoming packet lengths"
+attr unit b
+vector 68 MultiRadio.accessPoint1.wlan[0].mac.dcf.channelAccess.pendingQueue incomingDataRate:vector ETV
+attr interpolationmode linear
+attr recordingmode vector
+attr source throughput(packetPushStarted)
+attr title "incoming datarate"
+attr unit bps
+vector 69 MultiRadio.accessPoint1.wlan[0].mac.dcf.channelAccess.contention backoffPeriodGenerated:vector ETV
+attr interpolationmode none
+attr recordingmode vector
+attr title "backoff periods"
+vector 70 MultiRadio.accessPoint1.wlan[0].mac packetSentToUpper:vector(packetBytes) ETV
+attr interpolationmode none
+attr recordingmode vector(packetBytes)
+attr title "packets sent to upper layer, packetBytes"
+vector 71 MultiRadio.accessPoint1.wlan[0].mac packetSentToLower:vector(packetBytes) ETV
+attr interpolationmode none
+attr recordingmode vector(packetBytes)
+attr title "packets sent to lower layer, packetBytes"
+vector 72 MultiRadio.accessPoint1.wlan[0].radio transmissionState:vector ETV
+attr interpolationmode sample-hold
+attr recordingmode vector
+attr source transmissionStateChanged
+attr title "Radio transmission state"
+vector 73 MultiRadio.accessPoint1.wlan[0].mac.dcf packetSentToPeer:vector(packetBytes) ETV
+attr interpolationmode none
+attr recordingmode vector(packetBytes)
+attr title "packets sent, packetBytes"
+vector 74 MultiRadio.accessPoint1.wlan[0].mac.dcf packetSentToPeerUnicast:vector(packetBytes) ETV
+attr interpolationmode none
+attr recordingmode vector(packetBytes)
+attr source ieee80211Unicast(packetSentToPeer)
+attr title "packets sent: unicast, packetBytes"
+vector 75 MultiRadio.accessPoint1.wlan[0].mac.dcf packetSentToPeerWithoutRetry:vector(packetBytes) ETV
+attr interpolationmode none
+attr recordingmode vector(packetBytes)
+attr source ieee80211NotRetry(packetSentToPeer)
+attr title "packets sent: without retry, packetBytes"
+vector 76 MultiRadio.host1.wlan[0].mac packetReceivedFromLower:vector(packetBytes) ETV
+attr interpolationmode none
+attr recordingmode vector(packetBytes)
+attr title "packets received from lower layer, packetBytes"
+vector 77 MultiRadio.host1.wlan[0].mac.dcf packetReceivedFromPeer:vector(packetBytes) ETV
+attr interpolationmode none
+attr recordingmode vector(packetBytes)
+attr title "packets received, packetBytes"
+vector 78 MultiRadio.host1.wlan[0].mac.dcf packetReceivedFromPeerUnicast:vector(packetBytes) ETV
+attr interpolationmode none
+attr recordingmode vector(packetBytes)
+attr source ieee80211Unicast(packetReceivedFromPeer)
+attr title "packets received: unicast, packetBytes"
+vector 79 MultiRadio.host1.wlan[0].mac.dcf packetReceivedFromPeerWithoutRetry:vector(packetBytes) ETV
+attr interpolationmode none
+attr recordingmode vector(packetBytes)
+attr source ieee80211NotRetry(packetReceivedFromPeer)
+attr title "packets received: without retry, packetBytes"
+vector 80 MultiRadio.host1.wlan[0].mac.dcf.channelAccess.inProgressFrames queueingTime:vector ETV
+attr interpolationmode none
+attr recordingmode vector
+attr source queueingTime(packetDequeued)
+attr title "queueing times"
+vector 81 MultiRadio.accessPoint1.wlan[0].mac.dcf.channelAccess.pendingQueue queueingTime:vector ETV
+attr interpolationmode none
+attr recordingmode vector
+attr source queueingTime(packetPulled)
+attr title "queueing times"
+attr unit s
+vector 82 MultiRadio.accessPoint1.wlan[0].mac.dcf.channelAccess.pendingQueue outgoingPacketLengths:vector ETV
+attr interpolationmode none
+attr recordingmode vector
+attr source packetLength(packetPulled)
+attr title "outgoing packet lengths"
+attr unit b
+vector 83 MultiRadio.accessPoint1.wlan[0].mac.dcf.channelAccess.pendingQueue outgoingDataRate:vector ETV
+attr interpolationmode linear
+attr recordingmode vector
+attr source throughput(packetPulled)
+attr title "outgoing datarate"
+attr unit bps
+vector 84 MultiRadio.accessPoint1.wlan[0].mac.dcf packetSentToPeerMulticast:vector(packetBytes) ETV
+attr interpolationmode none
+attr recordingmode vector(packetBytes)
+attr source ieee80211Multicast(packetSentToPeer)
+attr title "packets sent: multicast, packetBytes"
+vector 85 MultiRadio.accessPoint1.wlan[0].mac.dcf packetSentToPeerBroadcast:vector(packetBytes) ETV
+attr interpolationmode none
+attr recordingmode vector(packetBytes)
+attr source ieee80211Broadcast(packetSentToPeer)
+attr title "packets sent: broadcast , packetBytes"
+vector 86 MultiRadio.accessPoint1.wlan[0].mac.dcf.channelAccess.inProgressFrames queueingTime:vector ETV
+attr interpolationmode none
+attr recordingmode vector
+attr source queueingTime(packetDequeued)
+attr title "queueing times"
+vector 87 MultiRadio.host1.wlan[0].mac.dcf packetDrop:vector(packetBytes) ETV
+attr interpolationmode none
+attr recordingmode vector(packetBytes)
+attr source packetDropped
+attr title "packet drops, packetBytes"
+vector 88 MultiRadio.host1.wlan[0].mac.dcf packetDropNotAddressedToUs:vector(packetBytes) ETV
+attr interpolationmode none
+attr recordingmode vector(packetBytes)
+attr source packetDropReasonIsNotAddressedToUs(packetDropped)
+attr title "packet drops: not addressed to us, packetBytes"
+vector 89 MultiRadio.host1.wlan[0].mac packetDrop:vector(packetBytes) ETV
+attr interpolationmode none
+attr recordingmode vector(packetBytes)
+attr source packetDropped
+attr title "packet drops, packetBytes"
+vector 90 MultiRadio.host1.wlan[0].mac packetDropNotAddressedToUs:vector(packetBytes) ETV
+attr interpolationmode none
+attr recordingmode vector(packetBytes)
+attr source packetDropReasonIsNotAddressedToUs(packetDropped)
+attr title "packet drops: not addressed to us, packetBytes"
+vector 91 MultiRadio.host1.ipv4.ip packetDropAddressResolutionFailed:vector(packetBytes) ETV
+attr interpolationmode none
+attr recordingmode vector(packetBytes)
+attr source packetDropReasonIsAddressResolutionFailed(packetDropped)
+attr title "packet drop: address resolution failed, packetBytes"
+39	25224 961542 0 98291 0 2047.593847025478 32768 0 2 20480 36864
+35	986766 974662 0 131048 0 2730.592844616389 32768 0 2 10924 21848
+50	1961428 624397 5 157301 0.1 3276.8 32768 0 5120 16778240 85904588800
+54	2585825 624397 7 157303 0.1 3276.8 32768 0 5120 16778240 85904588800
+68	3210222 624422 16 157312 0.1 3276.8 32768 0 5120 16778240 85904588800
+83	3834644 624422 34 157330 0.1 3276.8 32768 0 5120 16778240 85904588800
+0	4459066 235417 0 193783 0 4037.592844616389 8077 0 1 4038 4038
+1	4694483 235471 0 193783 0 4037.592844616389 8081 0 1 4038 4038
+2	4929954 243547 0 193783 0 4037.592844616389 8081 0 512 2067456 1058537472
+3	5173501 235417 0 193783 0 4037.592844616389 8077 0 1 4038 4038
+4	5408918 235444 0 193782 0 4037.592844616389 8078 0 1 4038 4038
+5	5644362 9 0 0 0 0 1 0 0 0 0
+6	5644371 9 0 0 0 0 1 0 0 0 0
+7	5644380 9 0 0 0 0 1 0 0 0 0
+8	5644389 18 0 0 0 0 2 0 0 0 0
+9	5644407 45 0 0 0 0 5 0 0 0 0
+10	5644452 50 0 0 0 0 5 0 0 0 0
+11	5644502 20 0 0 0 0 2 0 0 0 0
+12	5644522 20 0 0 0 0 2 0 0 0 0
+13	5644542 10 0 0 0 0 1 0 0 0 0
+14	5644552 10 0 0 0 0 1 0 0 0 0
+15	5644562 10 0 0 0 0 1 0 0 0 0
+16	5644572 243467 0 193768 0 4036.593606025478 8076 0 1 4037 4037
+17	5888039 243527 0 193792 0 4037.593084025478 8080 0 1 4038 4038
+18	6131566 251603 0 193792 0 4037.593084025478 8080 0 512 2067456 1058537472
+19	6383169 243467 0 193768 0 4036.593606025478 8076 0 1 4037 4037
+20	6626636 486943 0 193792 0 4037.593084025478 16151 0 1 8075 8075
+21	7113579 20 0 0 0 0 2 0 0 0 0
+22	7113599 50 0 0 0 0 5 0 0 0 0
+23	7113649 50 0 0 0 0 5 0 0 0 0
+24	7113699 20 0 0 0 0 2 0 0 0 0
+25	7113719 20 0 0 0 0 2 0 0 0 0
+26	7113739 243533 0 193790 0 4037.593083616389 8079 0 3 20192 52498
+27	7357272 10 0 0 0 0 1 0 0 0 0
+28	7357282 30 0 0 0 0 3 0 2 2 4
+29	7357312 10 0 0 0 0 1 1 1 1 1
+30	7357322 486923 0 193769 0 4036.593606025478 16151 0 3 40372 104966
+31	7844245 10 0 0 0 0 1 0 0 0 0
+32	7844255 30 0 0 0 0 3 0 2 2 4
+33	7844285 10 0 0 0 0 1 1 1 1 1
+34	7844295 730406 0 193790 0 4037.593083616389 24225 0 3 36335 84779
+35	8574701 486204 131069 193784 2730.593297434567 4037.592844616389 15684 0 2 5228 10456
+36	9060905 10 0 0 0 0 1 1 1 1 1
+37	9060915 20 0 0 0 0 2 0 0 0 0
+38	9060935 730407 0 193791 0 4037.593084025478 24225 0 3 24227 48455
+39	9791342 986226 98297 193792 2047.594086025478 4037.593084025478 31832 0 2 19892 35806
+40	10777568 10 0 0 0 0 1 1 1 1 1
+41	10777578 20 0 0 0 0 2 0 0 0 0
+42	10777598 11 0 0 0 0 1 31 31 31 961
+43	10777609 11 0 0 0 0 1 31 31 31 961
+44	10777620 11 0 0 0 0 1 31 31 31 961
+45	10777631 11 0 0 0 0 1 31 31 31 961
+46	10777642 132754 1 193777 0.592844616389 4037.592844616389 4038 0 4037 8150703 21938975575
+47	10910396 125788 3 193778 0.592844616389 4037.592844616389 4038 28 28 113064 3165792
+48	11036184 125789 5 193781 0.592844616389 4037.592844616389 4038 36 36 145368 5233248
+49	11161973 129827 5 193781 0.592844616389 4037.592844616389 4038 512 512 2067456 1058537472
+50	11291800 152898 157301 193781 3276.9 4037.5 7607 0 5120 3891200 19922944000
+51	11444698 124508 5 193781 0.592844616389 4037.592844616389 4038 0 31 62275 1301345
+52	11569206 121751 7 193783 0.592844616389 4037.592844616389 4038 0 0 0 0
+53	11690957 129827 7 193783 0.592844616389 4037.592844616389 4038 512 512 2067456 1058537472
+54	11820784 152898 157303 193783 3276.9 4037.5 7607 0 5120 3891200 19922944000
+55	11973682 150017 7 193783 0.592844616389 4037.592844616389 4038 11000000 11000000 44418000000 4.88598e+17
+56	12123699 125789 7 193783 0.592844616389 4037.592844616389 4038 64 64 258432 16539648
+57	12249488 487006 8 193790 0.592844616389 4037.593083616389 16152 0 2 16152 24228
+58	12736494 125790 13 193789 0.593083616389 4037.593083616389 4038 64 64 258432 16539648
+59	12862284 125790 13 193789 0.593083616389 4037.593083616389 4038 64 64 258432 16539648
+60	12988074 125790 13 193789 0.593083616389 4037.593083616389 4038 64 64 258432 16539648
+61	13113864 393493 13 193789 0.593083616389 4037.593083616389 12113 0 0.000213 0.86009400000005 0.000183200022
+62	13507357 125792 16 193792 0.593084025478 4037.593084025478 4038 64 64 258432 16539648
+63	13633149 125792 16 193792 0.593084025478 4037.593084025478 4038 64 64 258432 16539648
+64	13758941 125792 16 193792 0.593084025478 4037.593084025478 4038 64 64 258432 16539648
+65	13884733 125792 16 193792 0.593084025478 4037.593084025478 4038 64 64 258432 16539648
+66	14010525 300002 16 193792 0.593084025478 4037.593084025478 8075 11000000 11000000 88825000000 9.77075e+17
+67	14310527 129830 16 193792 0.593084025478 4037.593084025478 4038 512 512 2067456 1058537472
+68	14440357 152898 157312 193792 3276.9 4037.5 7607 0 5120 3891200 19922944000
+69	14593255 124483 16 193792 0.593084025478 4037.593084025478 4038 0 31 62153 1310255
+70	14717738 125792 16 193792 0.593084025478 4037.593084025478 4038 36 36 145368 5233248
+71	14843530 251520 20 193762 0.593094025478 4036.593367025478 8074 14 64 314886 17326804
+72	15095050 973786 21 193769 0.593094025478 4036.593606025478 32296 0 2 32296 48444
+73	16068836 251521 27 193768 0.593297025478 4036.593606025478 8074 14 64 314886 17326804
+74	16320357 125760 27 193755 0.593297025478 4036.593297025478 4037 14 14 56518 791252
+75	16446117 251521 27 193768 0.593297025478 4036.593606025478 8074 14 64 314886 17326804
+76	16697638 251521 30 193771 0.593297434567 4036.593606434567 8074 14 64 314886 17326804
+77	16949159 125760 30 193758 0.593297434567 4036.593297434567 4037 14 14 56518 791252
+78	17074919 125760 30 193758 0.593297434567 4036.593297434567 4037 14 14 56518 791252
+79	17200679 125760 30 193758 0.593297434567 4036.593297434567 4037 14 14 56518 791252
+80	17326439 174204 30 193758 0.593297434567 4036.593297434567 4037 0.000452818178 0.000452818178 1.8280269845859 0.00082776384849499
+81	17500643 178231 34 193762 0.593487025478 4036.593367025478 4037 0.593487025478 4036.5933670255 8149062.5844818 21932352202.497
+82	17678874 129797 34 193762 0.593487025478 4036.593367025478 4037 512 512 2066944 1058275328
+83	17808671 152697 157330 193762 3276.9 4036.5 7597 0 5120 3886080 19896729600
+84	17961368 125761 40 193768 0.593726025478 4036.593606025478 4037 64 64 258368 16535552
+85	18087129 125761 40 193768 0.593726025478 4036.593606025478 4037 64 64 258368 16535552
+86	18212890 149983 40 193768 0.593726025478 4036.593606025478 4037 0.000239 0.000239 0.96484299999996 0.00023059747700001
+87	18362873 125761 43 193771 0.593726434567 4036.593606434567 4037 64 64 258368 16535552
+88	18488634 125761 43 193771 0.593726434567 4036.593606434567 4037 64 64 258368 16535552
+89	18614395 125761 43 193771 0.593726434567 4036.593606434567 4037 64 64 258368 16535552
+90	18740156 125761 43 193771 0.593726434567 4036.593606434567 4037 64 64 258368 16535552
+91	18865917 125706 146 193682 3.592844616389 4035.592844616389 4035 84 84 338940 28470960
+20	18991623 62 193797 193804 4037.593094025478 4037.593297025478 2 0 1 1 1
+30	18991685 62 193797 193804 4037.593094025478 4037.593297025478 2 2 3 5 13
+34	18991747 31 193799 193799 4037.593094434567 4037.593094434567 1 3 3 3 9
+38	18991778 62 193797 193804 4037.593094025478 4037.593297025478 2 0 1 1 1
+39	18991840 124 193797 193804 4037.593094025478 4037.593297025478 4 1 2 6 10
+61	18991964 31 193802 193802 4037.593296616389 4037.593296616389 1 0 0 0 0
+71	18991995 32 193796 193796 4037.593094025478 4037.593094025478 1 14 14 14 196
+72	18992027 124 193797 193804 4037.593094025478 4037.593297025478 4 0 2 4 6
+73	18992151 32 193803 193803 4037.593297025478 4037.593297025478 1 14 14 14 196
+74	18992183 32 193803 193803 4037.593297025478 4037.593297025478 1 14 14 14 196
+75	18992215 32 193803 193803 4037.593297025478 4037.593297025478 1 14 14 14 196
+0	18992247 1590 193806 195054 4037.593297434567 4063.593297434567 53 0 1 26 26
+1	18993837 1560 193829 195031 4038.592844616389 4063.592844616389 52 0 1 26 26
+2	18995397 1612 193829 195031 4038.592844616389 4063.592844616389 52 0 512 13312 6815744
+3	18997009 1590 193806 195054 4037.593297434567 4063.593297434567 53 0 1 26 26
+4	18998599 1560 193829 195030 4038.592844616389 4063.592844616389 52 0 1 26 26
+16	19000159 1674 193810 195064 4037.593867025478 4063.593826025478 54 0 1 27 27
+17	19001833 1643 193810 195058 4037.593867025478 4063.593587025478 53 0 1 26 26
+18	19003476 1695 193810 195058 4037.593867025478 4063.593587025478 53 0 512 13312 6815744
+19	19005171 1674 193810 195064 4037.593867025478 4063.593826025478 54 0 1 27 27
+20	19006845 3255 193809 195057 4037.593867025478 4063.593587025478 105 0 1 52 52
+26	19010100 1612 193832 195038 4038.592844616389 4063.593083616389 52 2 3 130 338
+30	19011712 3286 193811 195065 4037.593867025478 4063.593826025478 106 2 3 265 689
+34	19014998 4929 193805 195066 4037.593297434567 4063.593826434567 159 0 3 239 557
+35	19019927 9858 193805 195066 4037.593297434567 4063.593826434567 318 0 2 104 208
+38	19029785 4898 193811 195065 4037.593867025478 4063.593826025478 158 0 3 157 313
+39	19034683 13082 193809 195065 4037.593867025478 4063.593826025478 422 0 2 262 472
+46	19047765 918 193825 195073 4038.592844616389 4064.592844616389 27 4038 4064 109377 443087865
+47	19048683 832 193827 195026 4038.592844616389 4063.592844616389 26 28 28 728 20384
+48	19049515 832 193829 195029 4038.592844616389 4063.592844616389 26 36 36 936 33696
+49	19050347 858 193829 195029 4038.592844616389 4063.592844616389 26 512 512 13312 6815744
+50	19051205 5226 193829 195029 4037.6 4063.5 260 0 5120 133120 681574400
+51	19056431 823 193829 195029 4038.592844616389 4063.592844616389 26 0 29 404 8438
+52	19057254 806 193831 195031 4038.592844616389 4063.592844616389 26 0 0 0 0
+53	19058060 858 193831 195031 4038.592844616389 4063.592844616389 26 512 512 13312 6815744
+54	19058918 5226 193831 195031 4037.6 4063.5 260 0 5120 133120 681574400
+55	19064144 988 193831 195031 4038.592844616389 4063.592844616389 26 11000000 11000000 286000000 3.146e+15
+56	19065132 832 193831 195031 4038.592844616389 4063.592844616389 26 64 64 1664 106496
+57	19065964 3224 193832 195038 4038.592844616389 4063.593083616389 104 0 2 104 156
+58	19069188 832 193837 195037 4038.593083616389 4063.593083616389 26 64 64 1664 106496
+59	19070020 832 193837 195037 4038.593083616389 4063.593083616389 26 64 64 1664 106496
+60	19070852 832 193837 195037 4038.593083616389 4063.593083616389 26 64 64 1664 106496
+61	19071684 2600 193837 195050 4038.593083616389 4063.593296616389 78 0 0.000213 0.005538 1.179594e-06
+62	19074284 832 193840 195040 4038.593084025478 4063.593084025478 26 64 64 1664 106496
+63	19075116 832 193840 195040 4038.593084025478 4063.593084025478 26 64 64 1664 106496
+64	19075948 832 193840 195040 4038.593084025478 4063.593084025478 26 64 64 1664 106496
+65	19076780 832 193840 195040 4038.593084025478 4063.593084025478 26 64 64 1664 106496
+66	19077612 2014 193810 195058 4037.593867025478 4063.593587025478 53 11000000 11000000 583000000 6.413e+15
+67	19079626 858 193840 195040 4038.593084025478 4063.593084025478 26 512 512 13312 6815744
+68	19080484 5226 193840 195040 4037.6 4063.5 260 0 5120 133120 681574400
+69	19085710 822 193840 195040 4038.593084025478 4063.593084025478 26 0 31 373 8245
+70	19086532 832 193840 195040 4038.593084025478 4063.593084025478 26 36 36 936 33696
+71	19087364 1696 193810 195058 4037.593867025478 4063.593587025478 53 14 64 2092 115688
+72	19089060 6572 193811 195065 4037.593867025478 4063.593826025478 212 0 2 212 318
+73	19095632 1696 193816 195064 4037.594106025478 4063.593826025478 53 14 64 2092 115688
+74	19097328 832 193851 195051 4038.593297025478 4063.593297025478 26 14 14 364 5096
+75	19098160 1696 193816 195064 4037.594106025478 4063.593826025478 53 14 64 2092 115688
+76	19099856 1728 193806 195067 4037.593297434567 4063.593826434567 54 14 64 2106 115884
+77	19101584 864 193806 195054 4037.593297434567 4063.593297434567 27 14 14 378 5292
+78	19102448 864 193806 195054 4037.593297434567 4063.593297434567 27 14 14 378 5292
+79	19103312 864 193806 195054 4037.593297434567 4063.593297434567 27 14 14 378 5292
+80	19104176 1188 193806 195054 4037.593297434567 4063.593297434567 27 0.000452818178 0.000452818178 0.012226090806 5.5361961628355e-06
+81	19105364 1215 193810 195058 4037.593867025478 4063.593587025478 27 4037.5938670255 4063.5935870255 109366.02834969 442998977.12822
+82	19106579 891 193810 195058 4037.593867025478 4063.593587025478 27 512 512 13824 7077888
+83	19107470 5427 193810 195058 4036.6 4063.5 270 0 5120 138240 707788800
+84	19112897 864 193816 195064 4037.594106025478 4063.593826025478 27 64 64 1728 110592
+85	19113761 864 193816 195064 4037.594106025478 4063.593826025478 27 64 64 1728 110592
+86	19114625 1026 193816 195064 4037.594106025478 4063.593826025478 27 0.000239 0.000239 0.006453 1.542267e-06
+87	19115651 864 193819 195067 4037.594106434567 4063.593826434567 27 64 64 1728 110592
+88	19116515 864 193819 195067 4037.594106434567 4063.593826434567 27 64 64 1728 110592
+89	19117379 864 193819 195067 4037.594106434567 4063.593826434567 27 64 64 1728 110592
+90	19118243 864 193819 195067 4037.594106434567 4063.593826434567 27 64 64 1728 110592
+91	19119107 864 193826 194978 4038.592844616389 4062.592844616389 27 84 84 2268 190512
+vector 92 MultiRadio.host2.wlan[0].mac.dcf.channelAccess.pendingQueue outgoingDataRate:vector ETV
+attr interpolationmode linear
+attr recordingmode vector
+attr source throughput(packetPulled)
+attr title "outgoing datarate"
+attr unit bps
+92	19120213 637711 195073 195073 0.1 3276.8 32768 0 0 0 0
+vector 93 MultiRadio.host2.wlan[0].mac.dcf.channelAccess.pendingQueue incomingDataRate:vector ETV
+attr interpolationmode linear
+attr recordingmode vector
+attr source throughput(packetPushStarted)
+attr title "incoming datarate"
+attr unit bps
+93	19758171 637711 195073 195073 0.1 3276.8 32768 0 0 0 0
+vector 94 MultiRadio.accessPoint2.wlan[0].mac.dcf.channelAccess.pendingQueue outgoingDataRate:vector ETV
+attr interpolationmode linear
+attr recordingmode vector
+attr source throughput(packetPulled)
+attr title "outgoing datarate"
+attr unit bps
+94	20396131 637711 195073 195073 0.1 3276.8 32768 0 0 0 0
+vector 95 MultiRadio.accessPoint2.wlan[0].mac.dcf.channelAccess.pendingQueue incomingDataRate:vector ETV
+attr interpolationmode linear
+attr recordingmode vector
+attr source throughput(packetPushStarted)
+attr title "incoming datarate"
+attr unit bps
+95	21034096 637711 195073 195073 0.1 3276.8 32768 0 0 0 0
+50	21671807 232 195073 195073 4063.6 4064.592844616389 11 0 5120 5120 26214400
+54	21672039 232 195073 195073 4063.6 4064.592844616389 11 0 5120 5120 26214400
+68	21672271 232 195073 195073 4063.6 4064.592844616389 11 0 5120 5120 26214400
+83	21672503 232 195073 195073 4063.6 4064.592844616389 11 0 5120 5120 26214400
+92	21672735 155995 195073 195073 3276.9 4064.592844616389 7878 0 0 0 0
+93	21828730 155995 195073 195073 3276.9 4064.592844616389 7878 0 0 0 0
+94	21984725 155995 195073 195073 3276.9 4064.592844616389 7878 0 0 0 0
+95	22140720 155995 195073 195073 3276.9 4064.592844616389 7878 0 0 0 0
+

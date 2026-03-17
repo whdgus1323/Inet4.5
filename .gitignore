@@ -1,0 +1,17 @@
+# build
+out/
+bin/
+
+# OMNeT++ results
+*.log
+*.vec
+*.sca
+
+# Eclipse / CDT
+.settings/
+.project
+.cproject
+
+# temp
+*.tmp
+*.bak
