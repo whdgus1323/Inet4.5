@@ -37,7 +37,7 @@ simple Aodv like IApp
         bool enableRreqGraphLog = default(false);
         bool enableRouteGraphLog = default(false);
         bool enablePrecursorLog = default(false);
-        bool enableRerrFanoutLog = default(false);
+        bool enableRerrFanoutLog = default(true);
         bool enableRoutingTableSnapshotLog = default(false);
         bool enableSummary1sLog = default(true);
         string networkProtocolModule = default("^.ipv4.ip");

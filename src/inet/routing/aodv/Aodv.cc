@@ -1212,7 +1212,7 @@ void Aodv::handleLinkBreakSendRERR(const L3Address& unreachableAddr)
     // For case (i), the node first makes a list of unreachable destinations
     // consisting of the unreachable neighbor and any additional destinations
     // (or subnets, see section 7) in the local routing table that use the
-    // unreachable neighbor as the next hop.
+    // unreachable neighbor as the next hop. Test
 
     for (int i = 0; i < routingTable->getNumRoutes(); i++) {
         IRoute *route = routingTable->getRoute(i);
@@ -1302,7 +1302,7 @@ void Aodv::appendAodvMetric(const std::string& fileName, const std::string& line
     logFile << line << endl;
 }
 
-void Aodv::logPrecursorAddition(const char *reason, const L3Address& routeDest, const L3Address& precursor, const std::set<L3Address>& precursorList) const
+void Aodv::logPrecursorAddition(const char *reason, const L3Address& routeDest, const L3Address& precursor, const std::set<L3Address>& precursorList) const // @suppress("Member declaration not found")
 {
     if (!enablePrecursorLog)
         return;
@@ -1380,6 +1380,10 @@ void Aodv::logSummary1s()
     if (!enableSummary1sLog || pwd.empty())
         return;
 
+    std::string externalId = "";
+    auto host = getParentModule();
+    if (host != nullptr && host->hasPar("externalId"))
+        externalId = host->par("externalId").stdstringValue();
     int managedRouteCount = 0;
     int activeRouteCount = 0;
     int precursorSum = 0;
@@ -1399,6 +1403,7 @@ void Aodv::logSummary1s()
     appendAodvMetric("aodv_summary_1s.csv",
             "time=" + simTime().str() +
             ",node=" + std::string(getParentModule()->getFullName()) +
+            ",externalId=" + externalId +
             ",rreqAcceptCount=" + std::to_string(summaryRreqAcceptCount) +
             ",managedRouteCount=" + std::to_string(managedRouteCount) +
             ",activeRouteCount=" + std::to_string(activeRouteCount) +

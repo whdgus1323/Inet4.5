@@ -554,7 +554,7 @@ void PingApp::sendPingRequest()
     /*
      * 실시간 PDR 저장
      */
-    /*
+
     simtime_t currentTime = simTime();
     static simtime_t lastPrintTime = SIMTIME_ZERO;
 
@@ -565,7 +565,7 @@ void PingApp::sendPingRequest()
         outFile << simTime().dbl() << " : " << 100 * ((double)numPongs / (double)sendSeqNo) << endl;
         outFile.close();
     }
-     */
+
 
     sendSeqNo++;
     sentCount++;
