@@ -103,10 +103,6 @@ void Ieee80211Mac::initialize(int stage)
         g_requestVec[host] = NgvRadioEnvRequestVectorGlobal();
         g_statusVec[host]  = NgvRadioEnvStatusVectorGlobal();
         g_mlmeState[host]  = MlmeRadioEnvironmentState();
-
-        bdRepetitions = par("bdRepetitions"); // 수정: 2026-03-11
-        if (bdRepetitions < 1) // 수정: 2026-03-11
-            bdRepetitions = 1; // 수정: 2026-03-11
     }
     else if (stage == INITSTAGE_LINK_LAYER) {
 

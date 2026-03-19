@@ -7,12 +7,38 @@
 
 #include "inet/linklayer/ieee80211/mac/framesequence/DcfFs.h"
 
+#include <algorithm>
+#include <cctype>
 #include <cstring>
 
 #include "inet/linklayer/ieee80211/mac/framesequence/PrimitiveFrameSequences.h"
 
 namespace inet {
 namespace ieee80211 {
+
+namespace {
+
+cModule *findBdParameterModule()
+{
+    cModule *module = getSimulation()->getContextModule();
+    while (module != nullptr) {
+        if (module->hasPar("bdRepetitionTarget"))
+            return module;
+        module = module->getParentModule();
+    }
+    return nullptr;
+}
+
+std::string getConfiguredBdRepetitionTarget()
+{
+    cModule *module = findBdParameterModule();
+    std::string target = module != nullptr && module->hasPar("bdRepetitionTarget") ? module->par("bdRepetitionTarget").stdstringValue() : "rreq";
+    std::transform(target.begin(), target.end(), target.begin(),
+            [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+    return target;
+}
+
+} // namespace
 
 DcfFs::DcfFs() :
     // Excerpt from G.2 Basic sequences (p. 2309)
@@ -90,19 +116,33 @@ int DcfFs::selectMulticastDataOrMgmt(AlternativesFs *frameSequence, FrameSequenc
     auto frameToTransmit = context->getInProgressFrames()->getFrameToTransmit();
     if (dynamicPtrCast<const Ieee80211MgmtHeader>(frameToTransmit->peekAtFront<Ieee80211MacHeader>()))
         return 0;
-    else if (isBroadcastRreqRepetitionNeeded(frameSequence, context))
+    else if (isBroadcastAodvRepetitionNeeded(frameSequence, context))
         return 1;
     else
         return 2;
 }
 
-bool DcfFs::isBroadcastRreqRepetitionNeeded(AlternativesFs *frameSequence, FrameSequenceContext *context)
+bool DcfFs::matchesBdRepetitionTarget(Packet *frameToTransmit, FrameSequenceContext *context)
+{
+    const auto target = getConfiguredBdRepetitionTarget();
+    const char *packetName = frameToTransmit->getName();
+    if (target == "rreq")
+        return std::strcmp(packetName, "aodv::Rreq") == 0;
+    else if (target == "rerr")
+        return std::strcmp(packetName, "aodv::Rerr") == 0;
+    else if (target == "hello")
+        return std::strcmp(packetName, "aodv::Hello") == 0;
+    else
+        return false;
+}
+
+bool DcfFs::isBroadcastAodvRepetitionNeeded(AlternativesFs *frameSequence, FrameSequenceContext *context)
 {
     auto frameToTransmit = context->getInProgressFrames()->getFrameToTransmit();
     auto header = frameToTransmit->peekAtFront<Ieee80211MacHeader>();
 
-    // Apply the custom 802.11bd-style static repetition only to broadcast AODV RREQ frames.
-    return header->getReceiverAddress().isMulticast() && std::strcmp(frameToTransmit->getName(), "aodv::Rreq") == 0;
+    // Apply the custom 802.11bd-style static repetition only to the selected broadcast AODV control frame kind.
+    return header->getReceiverAddress().isMulticast() && matchesBdRepetitionTarget(frameToTransmit, context);
 }
 
 bool DcfFs::isFragFrameSequenceNeeded(AlternativesFs *frameSequence, FrameSequenceContext *context)

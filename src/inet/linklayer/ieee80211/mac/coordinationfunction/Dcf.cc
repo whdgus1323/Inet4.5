@@ -305,9 +305,6 @@ void Dcf::originatorProcessTransmittedFrame(Packet *packet)
         }
         else if (dataOrMgmtHeader->getReceiverAddress().isMulticast()) {
             recoveryProcedure->multicastFrameTransmitted(stationRetryCounters);
-
-            // The broadcast RREQ repetition sequence sends duplicate frames before the final in-progress frame.
-            // Only the final transmission should be dropped from InProgressFrames; earlier duplicates are deleted here.
             auto inProgressFrame = channelAccess->getInProgressFrames()->getFrameToTransmit();
             if (packet == inProgressFrame)
                 channelAccess->getInProgressFrames()->dropFrame(packet);

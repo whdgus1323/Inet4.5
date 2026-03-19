@@ -95,6 +95,12 @@ class INET_API Aodv : public RoutingProtocolBase, public NetfilterBase::HookBase
     cPar *jitterPar = nullptr;
     cPar *periodicJitter = nullptr;
     std::string pwd;
+    bool enableRreqGraphLog = false;
+    bool enableRouteGraphLog = false;
+    bool enablePrecursorLog = false;
+    bool enableRerrFanoutLog = false;
+    bool enableRoutingTableSnapshotLog = false;
+    bool enableSummary1sLog = false;
 
     // the following parameters are calculated from the parameters defined above
     // see the NED file for more info
@@ -116,6 +122,11 @@ class INET_API Aodv : public RoutingProtocolBase, public NetfilterBase::HookBase
     unsigned int rreqCount = 0; // num of originated RREQ in the last second
     unsigned long totalOriginatedRerrCount = 0; // cumulative number of locally originated RERR messages
     simtime_t lastBroadcastTime; // the last time when any control packet was broadcasted
+    simtime_t nextRoutingTableSnapshotTime; // throttle full routing table snapshots
+    unsigned int summaryRreqAcceptCount = 0;
+    unsigned int summaryRerrGeneratedCount = 0;
+    unsigned int summaryRerrUnreachableSum = 0;
+    unsigned int summaryRerrPrecursorSum = 0;
     std::map<L3Address, unsigned int> addressToRreqRetries; // number of re-discovery attempts per address
 
     // self messages
@@ -156,8 +167,12 @@ class INET_API Aodv : public RoutingProtocolBase, public NetfilterBase::HookBase
     const Ptr<Rrep> createRREP(const Ptr<Rreq>& rreq, IRoute *destRoute, IRoute *originatorRoute, const L3Address& sourceAddr);
     const Ptr<Rrep> createGratuitousRREP(const Ptr<Rreq>& rreq, IRoute *originatorRoute);
     const Ptr<Rerr> createRERR(const std::vector<UnreachableNode>& unreachableNodes);
-    void logOriginatedRerr(const std::vector<UnreachableNode>& unreachableNodes, const std::set<L3Address>& precursorNodes);
+    void logOriginatedRerr(const char *reason, const std::vector<UnreachableNode>& unreachableNodes, const std::set<L3Address>& precursorNodes);
+    void logPrecursorAddition(const char *reason, const L3Address& routeDest, const L3Address& precursor, const std::set<L3Address>& precursorList) const;
+    void logRouteGraphEvent(const char *event, const L3Address& routeDest, const L3Address& nextHop, unsigned int hopCount, bool isActive, simtime_t lifeTime) const;
+    void logRoutingTableSnapshot(const char *reason);
     void appendAodvMetric(const std::string& fileName, const std::string& line) const;
+    void logSummary1s();
 
     /* Control Packet handlers */
     void handleRREP(const Ptr<Rrep>& rrep, const L3Address& sourceAddr);

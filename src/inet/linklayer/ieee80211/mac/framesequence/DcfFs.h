@@ -21,8 +21,8 @@ class INET_API DcfFs : public AlternativesFs
     virtual int selectDcfSequence(AlternativesFs *frameSequence, FrameSequenceContext *context);
     virtual int selectSelfCtsOrRtsCts(AlternativesFs *frameSequence, FrameSequenceContext *context);
     virtual int selectMulticastDataOrMgmt(AlternativesFs *frameSequence, FrameSequenceContext *context);
-    // Select the custom repetition sequence only for broadcast AODV RREQ frames.
-    virtual bool isBroadcastRreqRepetitionNeeded(AlternativesFs *frameSequence, FrameSequenceContext *context);
+    virtual bool matchesBdRepetitionTarget(Packet *frameToTransmit, FrameSequenceContext *context);
+    virtual bool isBroadcastAodvRepetitionNeeded(AlternativesFs *frameSequence, FrameSequenceContext *context);
     virtual bool hasMoreFragments(RepeatingFs *frameSequence, FrameSequenceContext *context);
     virtual bool isSelfCtsNeeded(OptionalFs *frameSequence, FrameSequenceContext *context);
     virtual bool isRtsCtsNeeded(OptionalFs *frameSequence, FrameSequenceContext *context);

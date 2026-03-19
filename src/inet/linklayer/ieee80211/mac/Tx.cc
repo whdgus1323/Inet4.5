@@ -125,4 +125,3 @@ void Tx::refreshDisplay() const
 
 } // namespace ieee80211
 } // namespace inet
-

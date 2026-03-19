@@ -50,14 +50,15 @@ class INET_API BroadcastRreqFs : public IFrameSequence
     int firstStep = -1;
     int step = -1;
     // Keep the current experiment's fixed repetition count and handle the inter-repeat spacing in prepareStep().
-    int repetitionCount = 3;
+    int repetitionCount = 1;
+    std::string history = "AODV-REP";
 
   public:
     virtual void startSequence(FrameSequenceContext *context, int firstStep) override;
     virtual IFrameSequenceStep *prepareStep(FrameSequenceContext *context) override;
     virtual bool completeStep(FrameSequenceContext *context) override;
 
-    virtual std::string getHistory() const override { return "RREQ-REP"; }
+    virtual std::string getHistory() const override { return history; }
 };
 
 class INET_API ManagementAckFs : public IFrameSequence

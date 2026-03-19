@@ -7,8 +7,44 @@
 
 #include "inet/linklayer/ieee80211/mac/framesequence/PrimitiveFrameSequences.h"
 
+#include <algorithm>
+#include <cctype>
+
 namespace inet {
 namespace ieee80211 {
+
+namespace {
+
+cModule *findBdParameterModule()
+{
+    cModule *module = getSimulation()->getContextModule();
+    while (module != nullptr) {
+        if (module->hasPar("bdRepetitions") || module->hasPar("bdRepetitionTarget"))
+            return module;
+        module = module->getParentModule();
+    }
+    return nullptr;
+}
+
+int getConfiguredBdRepetitions()
+{
+    cModule *module = findBdParameterModule();
+    if (module != nullptr && module->hasPar("bdRepetitions"))
+        return std::max(1, static_cast<int>(module->par("bdRepetitions").intValue()));
+    else
+        return 1;
+}
+
+std::string getConfiguredBdRepetitionTarget()
+{
+    cModule *module = findBdParameterModule();
+    std::string target = module != nullptr && module->hasPar("bdRepetitionTarget") ? module->par("bdRepetitionTarget").stdstringValue() : "rreq";
+    std::transform(target.begin(), target.end(), target.begin(),
+            [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+    return target;
+}
+
+} // namespace
 
 // TODO remove isForUs checks it's already done in framesequencehandler
 
@@ -136,6 +172,16 @@ void BroadcastRreqFs::startSequence(FrameSequenceContext *context, int firstStep
 {
     this->firstStep = firstStep;
     step = 0;
+    repetitionCount = getConfiguredBdRepetitions();
+    const auto target = getConfiguredBdRepetitionTarget();
+    if (target == "rreq")
+        history = "RREQ-REP";
+    else if (target == "rerr")
+        history = "RERR-REP";
+    else if (target == "hello")
+        history = "HELLO-REP";
+    else
+        history = "AODV-REP";
 }
 
 IFrameSequenceStep *BroadcastRreqFs::prepareStep(FrameSequenceContext *context)

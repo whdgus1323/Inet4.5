@@ -63,8 +63,6 @@ class INET_API Ieee80211Mac : public MacProtocolBase
     // The last change channel message received and not yet sent to the physical layer, or nullptr.
     cMessage *pendingRadioConfigMsg = nullptr;
 
-    int bdRepetitions = 1;
-
     void dcfeCorruptedFrame();
 
     void dcfeUpper(Packet *packet,
