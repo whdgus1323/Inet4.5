@@ -9,7 +9,9 @@
 
 #include <fstream>
 
+#include "inet/common/ModuleAccess.h"
 #include "inet/common/ProtocolTag_m.h"
+#include "inet/physicallayer/wireless/common/contract/packetlevel/IRadio.h"
 #include "inet/physicallayer/wireless/ieee80211/packetlevel/Ieee80211ControlInfo_m.h"
 #include "inet/physicallayer/wireless/ieee80211/packetlevel/Ieee80211Tag_m.h"
 #include "inet/physicallayer/wireless/ieee80211/packetlevel/Ieee80211TransmissionBase.h"
@@ -93,21 +95,45 @@ const IReceptionResult *Ieee80211ReceiverBase::computeReceptionResult(const ILis
         isReceptionSuccessful &= decision->isReceptionSuccessful();
     auto interferingReceptions = interference != nullptr ? interference->getInterferingReceptions() : nullptr;
     int numInterferingReceptions = interferingReceptions != nullptr ? interferingReceptions->size() : 0;
-    // Persist only failed overlapped receptions so collision_log.txt focuses on
-    // receptions that were actually lost under interference.
-    if (!isReceptionSuccessful && numInterferingReceptions > 0) {
+    if (!isReceptionSuccessful) {
         cModule *radioModule = getParentModule();
-        std::string pwd = radioModule != nullptr && radioModule->hasPar("pwd") ? radioModule->par("pwd").stdstringValue() : "";
+        std::string pwd;
+        if (radioModule != nullptr && radioModule->hasPar("pwd"))
+            pwd = radioModule->par("pwd").stdstringValue();
+        if (pwd.empty()) {
+            cModule *receiverNode = radioModule != nullptr ? getContainingNode(radioModule) : nullptr;
+            cModule *mobilityModule = receiverNode != nullptr ? receiverNode->getSubmodule("mobility") : nullptr;
+            if (mobilityModule != nullptr && mobilityModule->hasPar("pwd"))
+                pwd = mobilityModule->par("pwd").stdstringValue();
+        }
         if (!pwd.empty()) {
+            cModule *receiverNode = radioModule != nullptr ? getContainingNode(radioModule) : nullptr;
+            const auto transmitterRadio = check_and_cast<const cModule *>(reception->getTransmission()->getTransmitter());
+            cModule *transmitterNode = getContainingNode(const_cast<cModule *>(transmitterRadio));
+            std::ofstream snirDropLog(pwd + "/sinr_drop_log.csv", std::ios::app);
+            snirDropLog << "time=" << simTime()
+                        << ", receiverNode=" << (receiverNode != nullptr ? receiverNode->getFullName() : "<unknown>")
+                        << ", transmitterNode=" << (transmitterNode != nullptr ? transmitterNode->getFullName() : "<unknown>")
+                        << ", receiver=" << getFullPath()
+                        << ", frame=" << packet->getName()
+                        << ", interferingReceptions=" << numInterferingReceptions
+                        << ", minSNIR=" << snir->getMin()
+                        << ", avgSNIR=" << snir->getMean()
+                        << ", maxSNIR=" << snir->getMax()
+                        << "\n";
+
+            // Keep the old collision log for failed receptions with overlap.
             std::ofstream collisionLog(pwd + "/collision_log.txt", std::ios::app);
-            collisionLog << "time=" << simTime()
-                         << ", receiver=" << getFullPath()
-                         << ", frame=" << packet->getName()
-                         << ", interferingReceptions=" << numInterferingReceptions
-                         << ", minSNIR=" << snir->getMin()
-                         << ", avgSNIR=" << snir->getMean()
-                         << ", maxSNIR=" << snir->getMax()
-                         << "\n";
+            if (numInterferingReceptions > 0) {
+                collisionLog << "time=" << simTime()
+                             << ", receiver=" << getFullPath()
+                             << ", frame=" << packet->getName()
+                             << ", interferingReceptions=" << numInterferingReceptions
+                             << ", minSNIR=" << snir->getMin()
+                             << ", avgSNIR=" << snir->getMean()
+                             << ", maxSNIR=" << snir->getMax()
+                             << "\n";
+            }
         }
     }
     packet->addTagIfAbsent<Ieee80211ModeInd>()->setMode(transmission->getMode());

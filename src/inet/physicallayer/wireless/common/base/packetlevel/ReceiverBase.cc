@@ -7,6 +7,9 @@
 
 #include "inet/physicallayer/wireless/common/base/packetlevel/ReceiverBase.h"
 
+#include <fstream>
+
+#include "inet/common/ModuleAccess.h"
 #include "inet/common/ProtocolTag_m.h"
 #include "inet/physicallayer/wireless/common/base/packetlevel/NarrowbandNoiseBase.h"
 #include "inet/physicallayer/wireless/common/contract/packetlevel/IRadio.h"
@@ -18,6 +21,48 @@
 
 namespace inet {
 namespace physicallayer {
+
+namespace {
+
+std::string resolvePwdFromReceiverModule(const cModule *receiverModule)
+{
+    std::string pwd;
+    auto radioModule = receiverModule != nullptr ? receiverModule->getParentModule() : nullptr;
+    if (radioModule != nullptr && radioModule->hasPar("pwd"))
+        pwd = radioModule->par("pwd").stdstringValue();
+    if (pwd.empty()) {
+        auto nodeModule = radioModule != nullptr ? getContainingNode(const_cast<cModule *>(radioModule)) : nullptr;
+        auto mobilityModule = nodeModule != nullptr ? nodeModule->getSubmodule("mobility") : nullptr;
+        if (mobilityModule != nullptr && mobilityModule->hasPar("pwd"))
+            pwd = mobilityModule->par("pwd").stdstringValue();
+    }
+    return pwd;
+}
+
+void appendCollisionAttemptBlockLog(const cModule *receiverModule, const IReception *reception, const ITransmission *blockingTransmission, const char *reason)
+{
+    auto pwd = resolvePwdFromReceiverModule(receiverModule);
+    if (pwd.empty())
+        return;
+
+    auto receiverNode = receiverModule != nullptr ? getContainingNode(const_cast<cModule *>(receiverModule)) : nullptr;
+    auto transmitterRadio = check_and_cast<const cModule *>(reception->getTransmission()->getTransmitter());
+    auto blockingRadio = check_and_cast<const cModule *>(blockingTransmission->getTransmitter());
+    auto transmitterNode = getContainingNode(const_cast<cModule *>(transmitterRadio));
+    auto blockingNode = getContainingNode(const_cast<cModule *>(blockingRadio));
+    std::ofstream logFile(pwd + "/collision_attempt_block_log.csv", std::ios::app);
+    logFile << "time=" << simTime()
+            << ", receiverNode=" << (receiverNode != nullptr ? receiverNode->getFullName() : "<unknown>")
+            << ", receiver=" << (receiverModule != nullptr ? receiverModule->getFullPath() : "<unknown>")
+            << ", frame=" << reception->getTransmission()->getPacket()->getName()
+            << ", transmitterNode=" << (transmitterNode != nullptr ? transmitterNode->getFullName() : "<unknown>")
+            << ", blockingFrame=" << blockingTransmission->getPacket()->getName()
+            << ", blockingNode=" << (blockingNode != nullptr ? blockingNode->getFullName() : "<unknown>")
+            << ", reason=" << reason
+            << "\n";
+}
+
+}
 
 bool ReceiverBase::computeIsReceptionPossible(const IListening *listening, const ITransmission *transmission) const
 {
@@ -50,11 +95,15 @@ bool ReceiverBase::computeIsReceptionAttempted(const IListening *listening, cons
             if (isPrecedingReception) {
                 auto interferingTransmission = interferingReception->getTransmission();
                 if (interferingReception->getStartTime() <= simTime()) {
-                    if (radio->getReceptionInProgress() == interferingTransmission)
+                    if (radio->getReceptionInProgress() == interferingTransmission) {
+                        appendCollisionAttemptBlockLog(this, reception, interferingTransmission, "reception_in_progress");
                         return false;
+                    }
                 }
-                else if (radioMedium->isReceptionAttempted(radio, interferingTransmission, part))
+                else if (radioMedium->isReceptionAttempted(radio, interferingTransmission, part)) {
+                    appendCollisionAttemptBlockLog(this, reception, interferingTransmission, "preceding_attempted_reception");
                     return false;
+                }
             }
         }
         return true;
@@ -116,4 +165,3 @@ Packet *ReceiverBase::computeReceivedPacket(const ISnir *snir, bool isReceptionS
 
 } // namespace physicallayer
 } // namespace inet
-

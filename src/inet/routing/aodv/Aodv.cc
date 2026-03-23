@@ -1442,7 +1442,6 @@ void Aodv::logOriginatedRerr(const char *reason, const std::vector<UnreachableNo
     // Match the existing multi-line debug format so RERR contents and precursor
     // lists can be inspected side by side with earlier experiment logs.
 
-    /*
     totalOriginatedRerrCount++;
 
     std::ofstream logFileR(pwd + "/rerr_debug.txt", std::ios::app);
@@ -1457,7 +1456,7 @@ void Aodv::logOriginatedRerr(const char *reason, const std::vector<UnreachableNo
              << ", 노드: " << getParentModule()->getFullName()
              << ", Precursor 수: " << precursorNodes.size() << std::endl;
     for (const auto& precursorNode : precursorNodes)
-        logFileP << "  - Precursor: " << precursorNode << std::endl;*/
+        logFileP << "  - Precursor: " << precursorNode << std::endl;
 }
 
 void Aodv::handleRERR(const Ptr<const Rerr>& rerr, const L3Address& sourceAddr)

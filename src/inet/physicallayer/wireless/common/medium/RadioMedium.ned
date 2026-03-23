@@ -40,6 +40,8 @@ module RadioMedium like IRadioMedium
         bool recordTransmissionLog = default(false); // when enabled the medium writes one line per transmission into the communication log file
         bool recordReceptionLog = default(false);    // when enabled the medium writes one line per reception into the communication log file
 
+		string pwd = default("");
+
         @class(RadioMedium);
         @display("i=misc/sun");
 

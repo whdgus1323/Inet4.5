@@ -101,6 +101,10 @@ void RadioMedium::initialize(int stage)
         communicationCache = check_and_cast<ICommunicationCache *>(getSubmodule("communicationCache"));
         physicalEnvironment = dynamic_cast<physicalenvironment::IPhysicalEnvironment *>(findModuleByPath(par("physicalEnvironmentModule")));
         material = physicalEnvironment != nullptr ? physicalEnvironment->getMaterialRegistry()->getMaterial("air") : nullptr;
+
+        if (hasPar("pwd"))
+            pwd = par("pwd").stdstringValue();
+
         const char *rangeFilterString = par("rangeFilter");
         if (!strcmp(rangeFilterString, ""))
             rangeFilter = RANGE_FILTER_ANYWHERE;
@@ -538,13 +542,14 @@ const IReceptionResult *RadioMedium::computeReceptionResult(const IRadio *radio,
         throw cRuntimeError("Mobility module not found in the transmitter node.");
     }
 
+    /*
     Coord velocity = mobility->getCurrentVelocity();
     double speed = velocity.length();
+    */
 
-    /*
     if (!receptionDecision->isReceptionSuccessful())
     {
-        std::ofstream outFile("data/failed_packets.txt", std::ios::app);
+        std::ofstream outFile(pwd + "/failed_packets.txt", std::ios::app);
         if (!outFile.is_open())
         {
             throw cRuntimeError("Error: Failed to open file for writing failed packet headers.");
@@ -553,19 +558,18 @@ const IReceptionResult *RadioMedium::computeReceptionResult(const IRadio *radio,
         printPacketHeaders(transmitterPacket, outFile);
         outFile << "Latency: " << latency << " : "
                 << "ScalarSnir, minSNIR = " << snir->getMean() << " : "
-                << "Reception: " << reception << std::endl
-                << "Transmitter Speed: " << speed << " m/s" << std::endl;
+                << "Reception: " << reception << std::endl;
         outFile.close();
 
         EV_WARN << "Failed packet: " << transmitterPacket << " : ";
         EV_WARN << "Latency: " << latency << " : "
                 << "ScalarSnir, minSNIR = " << snir->getMean() << " : "
-                << "Reception: " << reception << std::endl
-                << "Transmitter Speed: " << speed << " m/s" << std::endl;
+                << "Reception: " << reception << std::endl;
     }
+    /*
     else
     {
-        std::ofstream outFile("data/successful_packets.txt", std::ios::app);
+        std::ofstream outFile(pwd + "/successful_packets.txt", std::ios::app);
         if (!outFile.is_open())
         {
             throw cRuntimeError("Error: Failed to open file for writing successful packet headers.");
@@ -574,15 +578,13 @@ const IReceptionResult *RadioMedium::computeReceptionResult(const IRadio *radio,
         printPacketHeaders(transmitterPacket, outFile);
         outFile << "Latency: " << latency << " : "
                 << "ScalarSnir, minSNIR = " << snir->getMean() << " : "
-                << "Reception: " << reception << std::endl
-                << "Transmitter Speed: " << speed << " m/s" << std::endl;
+                << "Reception: " << reception << std::endl;
         outFile.close();
 
         EV_INFO << "Successful packet: " << transmitterPacket << " : ";
         EV_INFO << "Latency: " << latency << " : "
                 << "ScalarSnir, minSNIR = " << snir->getMean() << " : "
-                << "Reception: " << reception << std::endl
-                << "Transmitter Speed: " << speed << " m/s" << std::endl;
+                << "Reception: " << reception << std::endl;
     }*/
 
     return radio->getReceiver()->computeReceptionResult(listening, reception, interference, snir, receptionDecisions);

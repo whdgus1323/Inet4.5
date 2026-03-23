@@ -40,6 +40,7 @@ class INET_API RadioMedium : public cSimpleModule, public cListener, public IRad
     };
 
   protected:
+    std::string pwd;
     /** @name Parameters and other models that control the behavior of the radio medium. */
     //@{
     /**

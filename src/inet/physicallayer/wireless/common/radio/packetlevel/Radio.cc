@@ -506,35 +506,23 @@ void Radio::endReception(cMessage *timer)
         int senderId = signal->getTransmission()->getTransmitter()->getId();
         int receiverId = getId();
 
-        /*
-        std::ofstream out(pwd + "/sinr_all_log.csv", std::ios::app);
-        static bool sinrAllWrite = true;
-        if (sinrAllWrite) {
-            out << "Time, SINR, Packet, Sender, Receiver, Success\n";
-            sinrAllWrite = false;
-        }
+        if (!pwd.empty()) {
+            std::ofstream out(pwd + "/sinr_all_log.csv", std::ios::app);
+            static bool sinrAllWrite = true;
+            if (sinrAllWrite) {
+                out << "Time,SINR,Packet,Sender,Receiver,Success\n";
+                sinrAllWrite = false;
+            }
 
-        if (!isReceptionSuccessful) {
-            out << simTime() << ","    // TIME
-                    << sinrMin << ","      // SINR_MIN
-                    << packetName << ","   // PACKET
-                    << senderId << ","
-                    << receiverId << ","
-                    << "False"
-                    << std::endl;
+            out << simTime() << ","
+                << sinrMin << ","
+                << packetName << ","
+                << senderId << ","
+                << receiverId << ","
+                << (isReceptionSuccessful ? "True" : "False")
+                << std::endl;
             out.close();
         }
-        else {
-            out << simTime() << ","    // TIME
-                    << sinrMin << ","      // SINR_MIN
-                    << packetName << ","   // PACKET
-                    << senderId << ","
-                    << receiverId << ","
-                    << "True"
-                    << std::endl;
-            out.close();
-        }
-        */
 
 
 
@@ -805,4 +793,3 @@ void Radio::updateTransceiverPart()
 
 } // namespace physicallayer
 } // namespace inet
-
