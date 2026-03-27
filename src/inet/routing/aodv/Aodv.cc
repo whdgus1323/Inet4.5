@@ -23,6 +23,7 @@
 #include "inet/networklayer/ipv4/IcmpHeader.h"
 #include "inet/networklayer/ipv4/Ipv4Header_m.h"
 #include "inet/networklayer/ipv4/Ipv4Route.h"
+#include "inet/physicallayer/wireless/common/radio/packetlevel/Radio.h"
 #include "inet/transportlayer/common/L4PortTag_m.h"
 #include "inet/transportlayer/contract/udp/UdpControlInfo.h"
 
@@ -82,6 +83,8 @@ void Aodv::initialize(int stage)
         networkProtocol.reference(this, "networkProtocolModule", true);
         if (hasPar("pwd"))
             pwd = par("pwd").stdstringValue();
+        cbrBasedRrepEnabled = par("cbrBasedRrepEnabled").boolValue();
+        cbrBasedRrepThreshold = par("cbrBasedRrepThreshold").intValue();
         enableRreqGraphLog = par("enableRreqGraphLog");
         enableRouteGraphLog = par("enableRouteGraphLog");
         enablePrecursorLog = par("enablePrecursorLog");
@@ -874,6 +877,24 @@ void Aodv::socketClosed(UdpSocket *socket)
         startActiveOperationExtraTimeOrFinish(par("stopOperationExtraTime"));
 }
 
+double Aodv::getLocalCbr()
+{
+    cModule *radioModule = nullptr;
+    if (host != nullptr) {
+        cModule *wlanModule = host->getSubmodule("wlan", 0);
+        if (wlanModule != nullptr)
+            radioModule = wlanModule->getSubmodule("radio");
+    }
+    if (radioModule == nullptr)
+        return 0.0;
+
+    auto *radio = dynamic_cast<physicallayer::Radio *>(radioModule);
+    if (radio == nullptr)
+        return 0.0;
+
+    return 100.0 * radio->getCurrentCbr();
+}
+
 void Aodv::handleRREQ(const Ptr<Rreq>& rreq, const L3Address& sourceAddr, unsigned int timeToLive)
 {
     EV_INFO << "AODV Route Request arrived with source addr: " << sourceAddr << " originator addr: " << rreq->getOriginatorAddr()
@@ -1055,6 +1076,12 @@ void Aodv::handleRREQ(const Ptr<Rreq>& rreq, const L3Address& sourceAddr, unsign
 
         // we respond to the RREQ, if the D (destination only) flag is not set
         if (!rreq->getDestOnlyFlag()) {
+            double localCbr = getLocalCbr();
+            if (cbrBasedRrepEnabled && localCbr < cbrBasedRrepThreshold) {
+                EV_INFO << "Skipping intermediate RREP because local CBR " << localCbr
+                        << " is below threshold " << cbrBasedRrepThreshold << endl;
+            }
+            else {
             // create RREP
             auto rrep = createRREP(rreq, destRoute, reverseRoute, sourceAddr);
 
@@ -1073,6 +1100,7 @@ void Aodv::handleRREQ(const Ptr<Rreq>& rreq, const L3Address& sourceAddr, unsign
             }
 
             return; // discard RREQ, in this case, we also do not forward it.
+            }
         }
         else
             EV_INFO << "The originator indicated that only the destination may respond to this RREQ (D flag is set). Forwarding ..." << endl;

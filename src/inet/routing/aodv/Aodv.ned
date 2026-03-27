@@ -34,6 +34,8 @@ simple Aodv like IApp
         string routingTableModule = default("^.ipv4.routingTable");
         string interfaceTableModule = default("^.interfaceTable");
         string pwd = default("");
+        bool cbrBasedRrepEnabled = default(false);
+        int cbrBasedRrepThreshold = default(10);
         bool enableRreqGraphLog = default(false);
         bool enableRouteGraphLog = default(false);
         bool enablePrecursorLog = default(false);

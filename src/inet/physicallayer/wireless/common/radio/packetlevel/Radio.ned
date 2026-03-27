@@ -57,6 +57,10 @@ module Radio extends PhysicalLayerBase like IRadio
         bool displayInterferenceRange = default(false);  // if true interference range is displayed as a gray circle around the node
 
  		string pwd = default("");
+        bool sinrAllLogEnabled = default(true);
+        bool cbrLogEnabled = default(false);
+        double cbrWindow @unit(s) = default(100ms);
+        double cbrRecordStartTime @unit(s) = default(30s);
 
         *.energySourceModule = default(absPath(this.energySourceModule));
 

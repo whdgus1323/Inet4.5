@@ -8,6 +8,8 @@
 #ifndef __INET_RADIO_H
 #define __INET_RADIO_H
 
+#include <string>
+
 #include "inet/common/ModuleRefByPar.h"
 #include "inet/physicallayer/wireless/common/base/packetlevel/PhysicalLayerBase.h"
 #include "inet/physicallayer/wireless/common/contract/packetlevel/IAntenna.h"
@@ -96,6 +98,10 @@ class INET_API Radio : public PhysicalLayerBase, public virtual IRadio
     bool separateReceptionParts = false;
 
     std::string pwd;
+    bool sinrAllLogEnabled = true;
+    bool cbrLogEnabled = false;
+    simtime_t cbrWindow = SimTime(100, SIMTIME_MS);
+    simtime_t cbrRecordStartTime = SimTime(30, SIMTIME_S);
     //@}
 
     /** Gates */
@@ -156,7 +162,12 @@ class INET_API Radio : public PhysicalLayerBase, public virtual IRadio
      * The timer that is scheduled to the end of the radio mode switch.
      */
     cMessage *switchTimer = nullptr;
+    cMessage *cbrTimer = nullptr;
     //@}
+
+    simtime_t cbrLastUpdateTime = SIMTIME_ZERO;
+    simtime_t cbrCurrentWindowStart = SIMTIME_ZERO;
+    simtime_t cbrBusyTime = SIMTIME_ZERO;
 
   private:
     void parseRadioModeSwitchingTimes();
@@ -172,6 +183,7 @@ class INET_API Radio : public PhysicalLayerBase, public virtual IRadio
     virtual void handleSwitchTimer(cMessage *message);
     virtual void handleTransmissionTimer(cMessage *message);
     virtual void handleReceptionTimer(cMessage *message);
+    virtual void handleCbrTimer(cMessage *message);
     virtual void handleUpperCommand(cMessage *command) override;
     virtual void handleLowerCommand(cMessage *command) override;
     virtual void handleUpperPacket(Packet *packet) override;
@@ -200,9 +212,13 @@ class INET_API Radio : public PhysicalLayerBase, public virtual IRadio
     virtual bool isReceiverMode(IRadio::RadioMode radioMode) const;
     virtual bool isTransmitterMode(IRadio::RadioMode radioMode) const;
     virtual bool isListeningPossible() const;
+    virtual bool isChannelBusyForCbr() const;
+    virtual void advanceCbrTracking(simtime_t targetTime);
+    virtual void writeCbrWindow(simtime_t windowStart, simtime_t busyTime) const;
 
     virtual void updateTransceiverState();
     virtual void updateTransceiverPart();
+    virtual void finish() override;
 
   public:
     Radio() {}
@@ -218,6 +234,7 @@ class INET_API Radio : public PhysicalLayerBase, public virtual IRadio
     virtual const IRadioMedium *getMedium() const override { return medium; }
 
     virtual const cGate *getRadioGate() const override { return radioIn; }
+    virtual double getCurrentCbr();
 
     virtual RadioMode getRadioMode() const override { return radioMode; }
     virtual void setRadioMode(RadioMode newRadioMode) override;
