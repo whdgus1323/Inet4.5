@@ -19,15 +19,25 @@ cModule *findBdParameterModule()
 {
     cModule *module = getSimulation()->getContextModule();
     while (module != nullptr) {
-        if (module->hasPar("bdRepetitions") || module->hasPar("bdRepetitionTarget"))
+        if (module->hasPar("bdRepetitionEnabled") || module->hasPar("bdRepetitions") || module->hasPar("bdRepetitionTarget"))
             return module;
         module = module->getParentModule();
     }
     return nullptr;
 }
 
+bool isBdRepetitionEnabled()
+{
+    cModule *module = findBdParameterModule();
+    if (module != nullptr && module->hasPar("bdRepetitionEnabled"))
+        return module->par("bdRepetitionEnabled").boolValue();
+    return false;
+}
+
 int getConfiguredBdRepetitions()
 {
+    if (!isBdRepetitionEnabled())
+        return 1;
     cModule *module = findBdParameterModule();
     if (module != nullptr && module->hasPar("bdRepetitions"))
         return std::max(1, static_cast<int>(module->par("bdRepetitions").intValue()));

@@ -84,6 +84,7 @@ module Ieee80211Mac extends MacProtocolBase like IIeee80211Mac
 
         int mtu @unit(B) = default(2304B);
         bool qosStation = default(false);
+        bool bdRepetitionEnabled = default(false);
         int bdRepetitions = default(1); // 수정: 2026-03-11
         string bdRepetitionTarget @enum("rreq","rerr","hello") = default("rreq");
 

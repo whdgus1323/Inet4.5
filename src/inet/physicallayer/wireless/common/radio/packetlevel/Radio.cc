@@ -5,9 +5,9 @@
 //
 // SIRN 기록
 
+#include <cmath>
 #include <filesystem>
 #include <fstream>
-#include <cmath>
 
 
 #include "inet/physicallayer/wireless/common/radio/packetlevel/Radio.h"
@@ -69,7 +69,6 @@ Radio::~Radio()
         check_and_cast<IRadioMedium *>(medium)->removeRadio(this);
     cancelAndDelete(transmissionTimer);
     cancelAndDelete(switchTimer);
-    cancelAndDelete(cbrTimer);
 }
 
 void Radio::initialize(int stage)
@@ -83,7 +82,8 @@ void Radio::initialize(int stage)
         cbrRecordStartTime = par("cbrRecordStartTime");
         switchTimer = new cMessage("switchTimer");
         transmissionTimer = new cMessage("transmissionTimer");
-        cbrTimer = new cMessage("cbrTimer");
+        cbrLastUpdateTime = simTime();
+        cbrCurrentWindowStart = cbrRecordStartTime;
         antenna = check_and_cast<IAntenna *>(getSubmodule("antenna"));
         transmitter = check_and_cast<ITransmitter *>(getSubmodule("transmitter"));
         receiver = check_and_cast<IReceiver *>(getSubmodule("receiver"));
@@ -101,8 +101,6 @@ void Radio::initialize(int stage)
         WATCH(transmissionState);
         WATCH(receivedSignalPart);
         WATCH(transmittedSignalPart);
-        cbrLastUpdateTime = simTime();
-        cbrCurrentWindowStart = cbrRecordStartTime;
     }
     else if (stage == INITSTAGE_PHYSICAL_LAYER) {
         medium->addRadio(this);
@@ -112,20 +110,17 @@ void Radio::initialize(int stage)
         parseRadioModeSwitchingTimes();
     }
     else if (stage == INITSTAGE_LAST) {
-        if (cbrWindow <= SIMTIME_ZERO)
-            throw cRuntimeError("cbrWindow must be greater than zero");
-        {
-            simtime_t firstBoundary;
-            if (simTime() <= cbrRecordStartTime)
-                firstBoundary = cbrRecordStartTime + cbrWindow;
-            else {
-                double elapsed = (simTime() - cbrRecordStartTime).dbl() / cbrWindow.dbl();
-                long long completedWindows = (long long)std::floor(elapsed);
-                firstBoundary = cbrRecordStartTime + (completedWindows + 1) * cbrWindow;
+        if (cbrLogEnabled) {
+            if (cbrWindow <= SIMTIME_ZERO)
+                throw cRuntimeError("cbrWindow must be greater than zero");
+            if (simTime() > cbrRecordStartTime) {
+                simtime_t elapsed = simTime() - cbrRecordStartTime;
+                int64_t windowsPassed = static_cast<int64_t>(floor(elapsed.dbl() / cbrWindow.dbl()));
+                cbrCurrentWindowStart = cbrRecordStartTime + windowsPassed * cbrWindow;
             }
-            cbrCurrentWindowStart = firstBoundary - cbrWindow;
+            else
+                cbrCurrentWindowStart = cbrRecordStartTime;
             cbrLastUpdateTime = simTime();
-            scheduleAt(firstBoundary, cbrTimer);
         }
         EV_INFO << "Initialized " << getCompleteStringRepresentation() << endl;
     }
@@ -269,8 +264,6 @@ void Radio::handleSelfMessage(cMessage *message)
         handleSwitchTimer(message);
     else if (message == transmissionTimer)
         handleTransmissionTimer(message);
-    else if (message == cbrTimer)
-        handleCbrTimer(message);
     else if (isReceptionTimer(message))
         handleReceptionTimer(message);
     else
@@ -308,12 +301,6 @@ void Radio::handleReceptionTimer(cMessage *message)
         endReception(message);
     else
         throw cRuntimeError("Unknown self message");
-}
-
-void Radio::handleCbrTimer(cMessage *message)
-{
-    advanceCbrTracking(simTime());
-    scheduleAt(simTime() + cbrWindow, message);
 }
 
 void Radio::handleUpperCommand(cMessage *message)
@@ -788,104 +775,97 @@ bool Radio::isChannelBusyForCbr() const
 
 void Radio::advanceCbrTracking(simtime_t targetTime)
 {
+    if (!cbrLogEnabled)
+        return;
     if (targetTime <= cbrLastUpdateTime)
         return;
 
-    simtime_t intervalStart = cbrLastUpdateTime;
-    simtime_t intervalEnd = targetTime;
-    bool wasBusy = isChannelBusyForCbr();
+    simtime_t cursor = cbrLastUpdateTime;
+    while (cursor < targetTime) {
+        if (cursor < cbrRecordStartTime) {
+            cursor = std::min(targetTime, cbrRecordStartTime);
+            cbrLastUpdateTime = cursor;
+            if (cursor >= cbrRecordStartTime)
+                cbrCurrentWindowStart = cbrRecordStartTime;
+            continue;
+        }
 
-    if (intervalEnd <= cbrRecordStartTime) {
-        cbrLastUpdateTime = intervalEnd;
-        return;
-    }
-
-    if (intervalStart < cbrRecordStartTime)
-        intervalStart = cbrRecordStartTime;
-
-    if (cbrCurrentWindowStart < cbrRecordStartTime)
-        cbrCurrentWindowStart = cbrRecordStartTime;
-
-    while (intervalStart < intervalEnd) {
         simtime_t windowEnd = cbrCurrentWindowStart + cbrWindow;
-        simtime_t segmentEnd = intervalEnd < windowEnd ? intervalEnd : windowEnd;
+        simtime_t segmentEnd = std::min(targetTime, windowEnd);
+        if (segmentEnd > cursor && isChannelBusyForCbr())
+            cbrBusyTime += segmentEnd - cursor;
 
-        if (wasBusy)
-            cbrBusyTime += segmentEnd - intervalStart;
+        cursor = segmentEnd;
+        cbrLastUpdateTime = cursor;
 
-        if (segmentEnd == windowEnd) {
-            if (cbrLogEnabled)
-                writeCbrWindow(cbrCurrentWindowStart, cbrBusyTime);
+        if (cursor >= windowEnd) {
+            writeCbrWindow(cbrCurrentWindowStart, cbrBusyTime);
             cbrCurrentWindowStart = windowEnd;
             cbrBusyTime = SIMTIME_ZERO;
         }
-
-        intervalStart = segmentEnd;
     }
-
-    cbrLastUpdateTime = intervalEnd;
 }
 
 double Radio::getCurrentCbr()
 {
+    if (!cbrLogEnabled || cbrWindow <= SIMTIME_ZERO || simTime() < cbrRecordStartTime)
+        return 0.0;
+
     advanceCbrTracking(simTime());
 
-    if (simTime() < cbrRecordStartTime || cbrWindow <= SIMTIME_ZERO)
+    simtime_t busyTime = cbrBusyTime;
+    if (simTime() > cbrLastUpdateTime && isChannelBusyForCbr())
+        busyTime += simTime() - cbrLastUpdateTime;
+
+    simtime_t elapsed = simTime() - cbrCurrentWindowStart;
+    if (elapsed <= SIMTIME_ZERO)
         return 0.0;
 
-    simtime_t effectiveStart = cbrCurrentWindowStart;
-    if (effectiveStart < cbrRecordStartTime)
-        effectiveStart = cbrRecordStartTime;
-
-    simtime_t elapsedInWindow = simTime() - effectiveStart;
-    if (elapsedInWindow <= SIMTIME_ZERO)
+    simtime_t effectiveWindow = std::min(elapsed, cbrWindow);
+    double ratio = busyTime.dbl() / effectiveWindow.dbl();
+    if (ratio < 0.0)
         return 0.0;
-
-    simtime_t denominator = elapsedInWindow < cbrWindow ? elapsedInWindow : cbrWindow;
-    double cbr = cbrBusyTime.dbl() / denominator.dbl();
-    if (cbr < 0.0)
-        cbr = 0.0;
-    if (cbr > 1.0)
-        cbr = 1.0;
-    return cbr;
+    if (ratio > 1.0)
+        return 1.0;
+    return ratio;
 }
 
-void Radio::writeCbrWindow(simtime_t windowStart, simtime_t busyTime) const
+void Radio::writeCbrWindow(simtime_t windowStart, simtime_t busyTime)
 {
     if (pwd.empty())
         return;
 
     std::filesystem::create_directories(pwd);
-    std::string path = pwd + "/cbr.csv";
-    bool needsHeader = !std::filesystem::exists(path) || std::filesystem::file_size(path) == 0;
-    std::ofstream out(path, std::ios::app);
+    std::string filePath = pwd + "/cbr.csv";
+    bool writeHeader = !std::filesystem::exists(filePath) || std::filesystem::file_size(filePath) == 0;
+    std::ofstream out(filePath, std::ios::app);
     if (!out.is_open())
         return;
 
-    if (needsHeader)
+    if (writeHeader) {
         out << "NodeId,WindowStart,WindowEnd,BusyTime,ChannelBusyPercentage\n";
+    }
 
-    int nodeId = -1;
     cModule *node = getContainingNode(this);
-    if (node != nullptr)
-        nodeId = node->getIndex();
+    int nodeId = node != nullptr ? node->getIndex() : -1;
+    double ratio = cbrWindow > SIMTIME_ZERO ? busyTime.dbl() / cbrWindow.dbl() : 0.0;
+    int percentage = (int)std::lround(100.0 * ratio);
+    if (percentage < 0)
+        percentage = 0;
+    if (percentage > 100)
+        percentage = 100;
 
-    double cbr = cbrWindow == SIMTIME_ZERO ? 0.0 : busyTime.dbl() / cbrWindow.dbl();
-    int channelBusyPercentage = (int)std::lround(100.0 * cbr);
-    if (channelBusyPercentage < 0)
-        channelBusyPercentage = 0;
-    if (channelBusyPercentage > 100)
-        channelBusyPercentage = 100;
     out << nodeId << ","
         << windowStart << ","
         << (windowStart + cbrWindow) << ","
         << busyTime << ","
-        << channelBusyPercentage << "\n";
+        << percentage << "\n";
 }
 
 void Radio::updateTransceiverState()
 {
-    advanceCbrTracking(simTime());
+    if (cbrLogEnabled)
+        advanceCbrTracking(simTime());
     // reception state
     ReceptionState newRadioReceptionState;
     if (radioMode == RADIO_MODE_OFF || radioMode == RADIO_MODE_SWITCHING || radioMode == RADIO_MODE_SLEEP || radioMode == RADIO_MODE_TRANSMITTER)
@@ -916,6 +896,13 @@ void Radio::updateTransceiverState()
     }
 }
 
+void Radio::finish()
+{
+    if (cbrLogEnabled)
+        advanceCbrTracking(simTime());
+    PhysicalLayerBase::finish();
+}
+
 void Radio::updateTransceiverPart()
 {
     IRadioSignal::SignalPart newReceivedPart = receptionTimer == nullptr ? IRadioSignal::SIGNAL_PART_NONE : (IRadioSignal::SignalPart)receptionTimer->getKind();
@@ -930,12 +917,6 @@ void Radio::updateTransceiverPart()
         transmittedSignalPart = newTransmittedPart;
         emit(transmittedSignalPartChangedSignal, transmittedSignalPart);
     }
-}
-
-void Radio::finish()
-{
-    advanceCbrTracking(simTime());
-    PhysicalLayerBase::finish();
 }
 
 } // namespace physicallayer

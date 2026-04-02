@@ -34,14 +34,14 @@ simple Aodv like IApp
         string routingTableModule = default("^.ipv4.routingTable");
         string interfaceTableModule = default("^.interfaceTable");
         string pwd = default("");
-        bool cbrBasedRrepEnabled = default(false);
-        int cbrBasedRrepThreshold = default(10);
         bool enableRreqGraphLog = default(false);
         bool enableRouteGraphLog = default(false);
         bool enablePrecursorLog = default(false);
         bool enableRerrFanoutLog = default(true);
         bool enableRoutingTableSnapshotLog = default(false);
         bool enableSummary1sLog = default(true);
+        bool cbrBasedRrepEnabled = default(false);
+        int cbrBasedRrepThreshold = default(10);
         string networkProtocolModule = default("^.ipv4.ip");
         bool askGratuitousRREP = default(false); // see RFC 3561: 6.6.3
         bool useHelloMessages = default(false); // see RFC 3561: 6.9

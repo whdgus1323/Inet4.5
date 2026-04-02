@@ -102,6 +102,9 @@ class INET_API Radio : public PhysicalLayerBase, public virtual IRadio
     bool cbrLogEnabled = false;
     simtime_t cbrWindow = SimTime(100, SIMTIME_MS);
     simtime_t cbrRecordStartTime = SimTime(30, SIMTIME_S);
+    simtime_t cbrLastUpdateTime = SIMTIME_ZERO;
+    simtime_t cbrCurrentWindowStart = SIMTIME_ZERO;
+    simtime_t cbrBusyTime = SIMTIME_ZERO;
     //@}
 
     /** Gates */
@@ -162,12 +165,7 @@ class INET_API Radio : public PhysicalLayerBase, public virtual IRadio
      * The timer that is scheduled to the end of the radio mode switch.
      */
     cMessage *switchTimer = nullptr;
-    cMessage *cbrTimer = nullptr;
     //@}
-
-    simtime_t cbrLastUpdateTime = SIMTIME_ZERO;
-    simtime_t cbrCurrentWindowStart = SIMTIME_ZERO;
-    simtime_t cbrBusyTime = SIMTIME_ZERO;
 
   private:
     void parseRadioModeSwitchingTimes();
@@ -183,7 +181,6 @@ class INET_API Radio : public PhysicalLayerBase, public virtual IRadio
     virtual void handleSwitchTimer(cMessage *message);
     virtual void handleTransmissionTimer(cMessage *message);
     virtual void handleReceptionTimer(cMessage *message);
-    virtual void handleCbrTimer(cMessage *message);
     virtual void handleUpperCommand(cMessage *command) override;
     virtual void handleLowerCommand(cMessage *command) override;
     virtual void handleUpperPacket(Packet *packet) override;
@@ -214,7 +211,7 @@ class INET_API Radio : public PhysicalLayerBase, public virtual IRadio
     virtual bool isListeningPossible() const;
     virtual bool isChannelBusyForCbr() const;
     virtual void advanceCbrTracking(simtime_t targetTime);
-    virtual void writeCbrWindow(simtime_t windowStart, simtime_t busyTime) const;
+    virtual void writeCbrWindow(simtime_t windowStart, simtime_t busyTime);
 
     virtual void updateTransceiverState();
     virtual void updateTransceiverPart();
@@ -234,7 +231,6 @@ class INET_API Radio : public PhysicalLayerBase, public virtual IRadio
     virtual const IRadioMedium *getMedium() const override { return medium; }
 
     virtual const cGate *getRadioGate() const override { return radioIn; }
-    virtual double getCurrentCbr();
 
     virtual RadioMode getRadioMode() const override { return radioMode; }
     virtual void setRadioMode(RadioMode newRadioMode) override;
@@ -244,6 +240,7 @@ class INET_API Radio : public PhysicalLayerBase, public virtual IRadio
 
     virtual const ITransmission *getTransmissionInProgress() const override;
     virtual const ITransmission *getReceptionInProgress() const override;
+    virtual double getCurrentCbr();
 
     virtual IRadioSignal::SignalPart getTransmittedSignalPart() const override;
     virtual IRadioSignal::SignalPart getReceivedSignalPart() const override;

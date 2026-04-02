@@ -95,14 +95,14 @@ class INET_API Aodv : public RoutingProtocolBase, public NetfilterBase::HookBase
     cPar *jitterPar = nullptr;
     cPar *periodicJitter = nullptr;
     std::string pwd;
-    bool cbrBasedRrepEnabled = false;
-    int cbrBasedRrepThreshold = 0;
     bool enableRreqGraphLog = false;
     bool enableRouteGraphLog = false;
     bool enablePrecursorLog = false;
     bool enableRerrFanoutLog = false;
     bool enableRoutingTableSnapshotLog = false;
     bool enableSummary1sLog = false;
+    bool cbrBasedRrepEnabled = false;
+    int cbrBasedRrepThreshold = 0;
 
     // the following parameters are calculated from the parameters defined above
     // see the NED file for more info
@@ -219,12 +219,12 @@ class INET_API Aodv : public RoutingProtocolBase, public NetfilterBase::HookBase
     void processPacket(Packet *pk);
     void clearState();
     void checkIpVersionAndPacketTypeCompatibility(AodvControlPacketType packetType);
-    double getLocalCbr();
 
     /* UDP callback interface */
     virtual void socketDataArrived(UdpSocket *socket, Packet *packet) override;
     virtual void socketErrorArrived(UdpSocket *socket, Indication *indication) override;
     virtual void socketClosed(UdpSocket *socket) override;
+    double getLocalCbr() const;
 
     /* Lifecycle */
     virtual void handleStartOperation(LifecycleOperation *operation) override;

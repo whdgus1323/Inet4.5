@@ -83,14 +83,14 @@ void Aodv::initialize(int stage)
         networkProtocol.reference(this, "networkProtocolModule", true);
         if (hasPar("pwd"))
             pwd = par("pwd").stdstringValue();
-        cbrBasedRrepEnabled = par("cbrBasedRrepEnabled").boolValue();
-        cbrBasedRrepThreshold = par("cbrBasedRrepThreshold").intValue();
         enableRreqGraphLog = par("enableRreqGraphLog");
         enableRouteGraphLog = par("enableRouteGraphLog");
         enablePrecursorLog = par("enablePrecursorLog");
         enableRerrFanoutLog = par("enableRerrFanoutLog");
         enableRoutingTableSnapshotLog = par("enableRoutingTableSnapshotLog");
         enableSummary1sLog = par("enableSummary1sLog");
+        cbrBasedRrepEnabled = par("cbrBasedRrepEnabled");
+        cbrBasedRrepThreshold = par("cbrBasedRrepThreshold");
 
         aodvUDPPort = par("udpPort");
         askGratuitousRREP = par("askGratuitousRREP");
@@ -877,7 +877,7 @@ void Aodv::socketClosed(UdpSocket *socket)
         startActiveOperationExtraTimeOrFinish(par("stopOperationExtraTime"));
 }
 
-double Aodv::getLocalCbr()
+double Aodv::getLocalCbr() const
 {
     cModule *radioModule = nullptr;
     if (host != nullptr) {
@@ -1076,12 +1076,14 @@ void Aodv::handleRREQ(const Ptr<Rreq>& rreq, const L3Address& sourceAddr, unsign
 
         // we respond to the RREQ, if the D (destination only) flag is not set
         if (!rreq->getDestOnlyFlag()) {
-            double localCbr = getLocalCbr();
-            if (cbrBasedRrepEnabled && localCbr < cbrBasedRrepThreshold) {
-                EV_INFO << "Skipping intermediate RREP because local CBR " << localCbr
-                        << " is below threshold " << cbrBasedRrepThreshold << endl;
+            if (cbrBasedRrepEnabled) {
+                double localCbr = getLocalCbr();
+                if (localCbr < cbrBasedRrepThreshold) {
+                    EV_INFO << "Skipping intermediate RREP because local CBR " << localCbr
+                            << " is below threshold " << cbrBasedRrepThreshold << endl;
+                    return;
+                }
             }
-            else {
             // create RREP
             auto rrep = createRREP(rreq, destRoute, reverseRoute, sourceAddr);
 
@@ -1100,7 +1102,6 @@ void Aodv::handleRREQ(const Ptr<Rreq>& rreq, const L3Address& sourceAddr, unsign
             }
 
             return; // discard RREQ, in this case, we also do not forward it.
-            }
         }
         else
             EV_INFO << "The originator indicated that only the destination may respond to this RREQ (D flag is set). Forwarding ..." << endl;
