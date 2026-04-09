@@ -7,6 +7,7 @@
 
 #include "inet/routing/aodv/Aodv.h"
 
+#include <filesystem>
 #include <fstream>
 #include <sstream>
 
@@ -23,6 +24,7 @@
 #include "inet/networklayer/ipv4/IcmpHeader.h"
 #include "inet/networklayer/ipv4/Ipv4Header_m.h"
 #include "inet/networklayer/ipv4/Ipv4Route.h"
+#include "inet/mobility/contract/IMobility.h"
 #include "inet/physicallayer/wireless/common/radio/packetlevel/Radio.h"
 #include "inet/transportlayer/common/L4PortTag_m.h"
 #include "inet/transportlayer/contract/udp/UdpControlInfo.h"
@@ -91,6 +93,11 @@ void Aodv::initialize(int stage)
         enableSummary1sLog = par("enableSummary1sLog");
         cbrBasedRrepEnabled = par("cbrBasedRrepEnabled");
         cbrBasedRrepThreshold = par("cbrBasedRrepThreshold");
+        cbrBasedRrepDirectRouteBypassEnabled = par("cbrBasedRrepDirectRouteBypassEnabled");
+        cbrRrepMetricsEnabled = par("cbrRrepMetricsEnabled");
+        cbrRrepDecisionLogEnabled = par("cbrRrepDecisionLogEnabled");
+        cbrRouteCauseLogEnabled = par("cbrRouteCauseLogEnabled");
+        transmissionFailureDiagnosisLogEnabled = par("transmissionFailureDiagnosisLogEnabled");
 
         aodvUDPPort = par("udpPort");
         askGratuitousRREP = par("askGratuitousRREP");
@@ -129,6 +136,8 @@ void Aodv::initialize(int stage)
         networkProtocol->registerHook(0, this);
         host->subscribe(linkBrokenSignal, this);
         usingIpv6 = (routingTable->getRouterIdAsGeneric().getType() == L3Address::IPv6);
+        if (cbrRrepDecisionLogEnabled)
+            ensureCbrRrepDecisionLogFile();
     }
 }
 
@@ -143,6 +152,8 @@ void Aodv::handleMessageWhenUp(cMessage *msg)
             expungeRoutes();
         else if (msg == counterTimer) {
             logSummary1s();
+            logTransmissionFailureDiagnosis1s();
+            logCbrRrepMetrics1s();
             rreqCount = rerrCount = 0;
             scheduleAfter(1, counterTimer);
         }
@@ -296,6 +307,11 @@ void Aodv::startRouteDiscovery(const L3Address& target, unsigned timeToLive)
 {
     EV_INFO << "Starting route discovery with originator " << getSelfIPAddress() << " and destination " << target << endl;
     ASSERT(!hasOngoingRouteDiscovery(target));
+    if (cbrRrepMetricsEnabled) {
+        metricsRouteDiscoveryStartedCount++;
+        metricsRouteDiscoveryStartTimes[target] = simTime();
+        metricsRouteDiscoveryCandidateCounts[target] = 0;
+    }
     auto rreq = createRREQ(target);
     addressToRreqRetries[target] = 0;
     sendRREQ(rreq, addressType->getBroadcastAddress(), timeToLive);
@@ -640,6 +656,10 @@ void Aodv::handleRREP(const Ptr<Rrep>& rrep, const L3Address& sourceAddr)
         handleHelloMessage(rrep);
         return;
     }
+    if (cbrRrepMetricsEnabled && hasOngoingRouteDiscovery(rrep->getDestAddr())) {
+        metricsRrepReceivedCount++;
+        metricsRouteDiscoveryCandidateCounts[rrep->getDestAddr()]++;
+    }
     // When a node receives a RREP message, it searches (using longest-
     // prefix matching) for a route to the previous hop.
 
@@ -805,6 +825,7 @@ void Aodv::updateRoutingTable(IRoute *route, const L3Address& nextHop, unsigned 
     routingData->setIsActive(isActive);
     routingData->setHasValidDestNum(hasValidDestNum);
     logRouteGraphEvent("ROUTE_UPDATE", route->getDestinationAsGeneric(), nextHop, hopCount, isActive, lifeTime);
+    logRouteCauseEvent("ROUTE_UPDATE", route->getDestinationAsGeneric(), nextHop, hopCount, isActive, lifeTime, "updateRoutingTable");
     logRoutingTableSnapshot("ROUTE_UPDATE");
 
     EV_DETAIL << "Route updated: " << route << endl;
@@ -895,10 +916,247 @@ double Aodv::getLocalCbr() const
     return 100.0 * radio->getCurrentCbr();
 }
 
+int Aodv::countCurrentNeighbors() const
+{
+    if (host == nullptr)
+        return 0;
+    cModule *mobilityModule = host->getSubmodule("mobility");
+    if (mobilityModule == nullptr)
+        return 0;
+    auto *selfMobility = dynamic_cast<IMobility *>(mobilityModule);
+    if (selfMobility == nullptr)
+        return 0;
+
+    double neighborRange = 200.0;
+    cModule *network = host->getParentModule();
+    if (network != nullptr) {
+        cModule *connectionManager = network->getSubmodule("connectionManager");
+        if (connectionManager != nullptr && connectionManager->hasPar("maxInterfDist"))
+            neighborRange = connectionManager->par("maxInterfDist").doubleValue();
+    }
+    if (network == nullptr)
+        return 0;
+
+    Coord selfPosition = selfMobility->getCurrentPosition();
+    int neighborCount = 0;
+    for (const char *vectorName : {"node", "rsu"}) {
+        for (int i = 0;; ++i) {
+            cModule *candidate = network->getSubmodule(vectorName, i);
+            if (candidate == nullptr)
+                break;
+            if (candidate == host)
+                continue;
+            cModule *candidateMobilityModule = candidate->getSubmodule("mobility");
+            if (candidateMobilityModule == nullptr)
+                continue;
+            auto *candidateMobility = dynamic_cast<IMobility *>(candidateMobilityModule);
+            if (candidateMobility == nullptr)
+                continue;
+            if (selfPosition.distance(candidateMobility->getCurrentPosition()) <= neighborRange)
+                neighborCount++;
+        }
+    }
+    return neighborCount;
+}
+
+void Aodv::logCbrRrepMetrics1s()
+{
+    if (!cbrRrepMetricsEnabled || pwd.empty())
+        return;
+
+    std::string externalId = "";
+    auto parent = getParentModule();
+    if (parent != nullptr && parent->hasPar("externalId"))
+        externalId = parent->par("externalId").stdstringValue();
+
+    cModule *nodeModule = getContainingNode(this);
+    int nodeIndex = nodeModule != nullptr ? nodeModule->getIndex() : -1;
+    double localCbr = getLocalCbr();
+    int neighborCount = countCurrentNeighbors();
+    double blockRate = metricsRrepCandidateCount > 0 ? (double)metricsRrepBlockedCount / metricsRrepCandidateCount : 0.0;
+    double discoveryDelayAvgMs = metricsRouteDiscoveryDelayCount > 0 ? 1000.0 * metricsRouteDiscoveryDelaySum.dbl() / metricsRouteDiscoveryDelayCount : 0.0;
+    double routeCandidateAvg = metricsRouteCandidateCountCount > 0 ? (double)metricsRouteCandidateCountSum / metricsRouteCandidateCountCount : 0.0;
+    double selectedHopAvg = metricsSelectedRouteHopCountCount > 0 ? (double)metricsSelectedRouteHopCountSum / metricsSelectedRouteHopCountCount : 0.0;
+
+    std::filesystem::create_directories(pwd);
+    std::string filePath = pwd + "/aodv_cbr_rrep_metrics_1s.csv";
+    bool writeHeader = !std::filesystem::exists(filePath) || std::filesystem::file_size(filePath) == 0;
+    std::ofstream out(filePath, std::ios::app);
+    if (!out.is_open())
+        return;
+
+    if (writeHeader) {
+        out << "time,node,nodeIndex,externalId,localCbr,neighborCount,"
+               "rreqReceived,rrepCandidates,rrepAllowed,rrepBlocked,rrepBlockRate,"
+               "routeDiscoveryStarted,routeDiscoverySucceeded,routeDiscoveryFailed,"
+               "routeDiscoveryDelayAvgMs,rrepReceived,routeCandidateAvg,"
+               "selectedRouteHopAvg,relayParticipation\n";
+    }
+
+    out << simTime() << ","
+        << getParentModule()->getFullName() << ","
+        << nodeIndex << ","
+        << externalId << ","
+        << localCbr << ","
+        << neighborCount << ","
+        << metricsRreqReceivedCount << ","
+        << metricsRrepCandidateCount << ","
+        << metricsRrepAllowedCount << ","
+        << metricsRrepBlockedCount << ","
+        << blockRate << ","
+        << metricsRouteDiscoveryStartedCount << ","
+        << metricsRouteDiscoverySucceededCount << ","
+        << metricsRouteDiscoveryFailedCount << ","
+        << discoveryDelayAvgMs << ","
+        << metricsRrepReceivedCount << ","
+        << routeCandidateAvg << ","
+        << selectedHopAvg << ","
+        << metricsRelayParticipationCount << "\n";
+
+    metricsRreqReceivedCount = 0;
+    metricsRrepCandidateCount = 0;
+    metricsRrepAllowedCount = 0;
+    metricsRrepBlockedCount = 0;
+    metricsRouteDiscoveryStartedCount = 0;
+    metricsRouteDiscoverySucceededCount = 0;
+    metricsRouteDiscoveryFailedCount = 0;
+    metricsRrepReceivedCount = 0;
+    metricsRelayParticipationCount = 0;
+    metricsRouteCandidateCountSum = 0;
+    metricsRouteCandidateCountCount = 0;
+    metricsSelectedRouteHopCountSum = 0;
+    metricsSelectedRouteHopCountCount = 0;
+    metricsRouteDiscoveryDelaySum = SIMTIME_ZERO;
+    metricsRouteDiscoveryDelayCount = 0;
+}
+
+void Aodv::logTransmissionFailureDiagnosis1s()
+{
+    if (!transmissionFailureDiagnosisLogEnabled || pwd.empty())
+        return;
+
+    std::filesystem::create_directories(pwd);
+    std::string filePath = pwd + "/aodv_transmission_failure_diagnosis_1s.csv";
+    bool writeHeader = !std::filesystem::exists(filePath) || std::filesystem::file_size(filePath) == 0;
+    std::ofstream out(filePath, std::ios::app);
+    if (!out.is_open())
+        return;
+
+    double localCbr = getLocalCbr();
+    int neighborCount = countCurrentNeighbors();
+    double routeDiscoveryDelayAvgMs = metricsRouteDiscoveryDelayCount > 0 ? 1000.0 * metricsRouteDiscoveryDelaySum.dbl() / metricsRouteDiscoveryDelayCount : 0.0;
+    double rrepBlockRate = metricsRrepCandidateCount > 0 ? (double)metricsRrepBlockedCount / metricsRrepCandidateCount : 0.0;
+
+    if (writeHeader) {
+        out << "time,node,localCbr,neighborCount,"
+               "routeDiscoveryStarted,routeDiscoverySucceeded,routeDiscoveryFailed,routeDiscoveryDelayAvgMs,"
+               "rreqReceived,rrepReceived,rrepCandidates,rrepAllowed,rrepBlocked,rrepBlockRate,"
+               "noRouteToForward,noActiveRouteToForward,"
+               "routeInvalidate,routeExpireInactive,routeDelete,rerrOriginated\n";
+    }
+
+    out << simTime() << ","
+        << getParentModule()->getFullName() << ","
+        << localCbr << ","
+        << neighborCount << ","
+        << metricsRouteDiscoveryStartedCount << ","
+        << metricsRouteDiscoverySucceededCount << ","
+        << metricsRouteDiscoveryFailedCount << ","
+        << routeDiscoveryDelayAvgMs << ","
+        << metricsRreqReceivedCount << ","
+        << metricsRrepReceivedCount << ","
+        << metricsRrepCandidateCount << ","
+        << metricsRrepAllowedCount << ","
+        << metricsRrepBlockedCount << ","
+        << rrepBlockRate << ","
+        << diagnosisNoRouteToForwardCount << ","
+        << diagnosisNoActiveRouteToForwardCount << ","
+        << diagnosisRouteInvalidateCount << ","
+        << diagnosisRouteExpireInactiveCount << ","
+        << diagnosisRouteDeleteCount << ","
+        << diagnosisRerrOriginatedCount << "\n";
+
+    diagnosisNoRouteToForwardCount = 0;
+    diagnosisNoActiveRouteToForwardCount = 0;
+    diagnosisRouteInvalidateCount = 0;
+    diagnosisRouteExpireInactiveCount = 0;
+    diagnosisRouteDeleteCount = 0;
+    diagnosisRerrOriginatedCount = 0;
+}
+
+void Aodv::ensureCbrRrepDecisionLogFile() const
+{
+    if (!cbrRrepDecisionLogEnabled || pwd.empty())
+        return;
+
+    std::filesystem::create_directories(pwd);
+    std::string filePath = pwd + "/aodv_cbr_rrep_decisions.csv";
+    bool writeHeader = !std::filesystem::exists(filePath) || std::filesystem::file_size(filePath) == 0;
+    if (!writeHeader)
+        return;
+
+    std::ofstream out(filePath, std::ios::app);
+    if (!out.is_open())
+        return;
+    out << "time,node,source,originator,destination,rreqId,hopCount,localCbr,threshold,decision\n";
+}
+
+void Aodv::logCbrRrepDecision(const Ptr<Rreq>& rreq, const L3Address& sourceAddr, double localCbr, const char *decision) const
+{
+    if (!cbrRrepDecisionLogEnabled || pwd.empty())
+        return;
+
+    ensureCbrRrepDecisionLogFile();
+    std::string filePath = pwd + "/aodv_cbr_rrep_decisions.csv";
+    std::ofstream out(filePath, std::ios::app);
+    if (!out.is_open())
+        return;
+
+    out << simTime() << ","
+        << getParentModule()->getFullName() << ","
+        << sourceAddr << ","
+        << rreq->getOriginatorAddr() << ","
+        << rreq->getDestAddr() << ","
+        << rreq->getRreqId() << ","
+        << rreq->getHopCount() << ","
+        << localCbr << ","
+        << cbrBasedRrepThreshold << ","
+        << decision << "\n";
+}
+
+void Aodv::logRouteCauseEvent(const char *event, const L3Address& routeDest, const L3Address& nextHop, unsigned int hopCount, bool isActive, simtime_t lifeTime, const char *reason) const
+{
+    if (!cbrRouteCauseLogEnabled || pwd.empty())
+        return;
+
+    std::filesystem::create_directories(pwd);
+    std::string filePath = pwd + "/aodv_route_cause_events.csv";
+    bool writeHeader = !std::filesystem::exists(filePath) || std::filesystem::file_size(filePath) == 0;
+    std::ofstream out(filePath, std::ios::app);
+    if (!out.is_open())
+        return;
+
+    if (writeHeader)
+        out << "time,node,event,routeDest,nextHop,hopCount,active,lifeTime,localCbr,reason\n";
+
+    out << simTime() << ","
+        << getParentModule()->getFullName() << ","
+        << event << ","
+        << routeDest << ","
+        << nextHop << ","
+        << hopCount << ","
+        << (isActive ? 1 : 0) << ","
+        << lifeTime << ","
+        << getLocalCbr() << ","
+        << reason << "\n";
+}
+
 void Aodv::handleRREQ(const Ptr<Rreq>& rreq, const L3Address& sourceAddr, unsigned int timeToLive)
 {
     EV_INFO << "AODV Route Request arrived with source addr: " << sourceAddr << " originator addr: " << rreq->getOriginatorAddr()
                     << " destination addr: " << rreq->getDestAddr() << endl;
+    if (cbrRrepMetricsEnabled)
+        metricsRreqReceivedCount++;
 
     /*appendAodvMetric("aodv_control_log.txt",
             "time=" + simTime().str() +
@@ -912,6 +1170,7 @@ void Aodv::handleRREQ(const Ptr<Rreq>& rreq, const L3Address& sourceAddr, unsign
     // A node ignores all RREQs received from any node in its blacklist set.
 
     if (containsKey(blacklist, sourceAddr)) {
+        logCbrRrepDecision(rreq, sourceAddr, getLocalCbr(), "blacklist_drop");
         EV_INFO << "The sender node " << sourceAddr << " is in our blacklist. Ignoring the Route Request" << endl;
         return;
     }
@@ -943,6 +1202,7 @@ void Aodv::handleRREQ(const Ptr<Rreq>& rreq, const L3Address& sourceAddr, unsign
                 ", originator=" + rreq->getOriginatorAddr().str() +
                 ", target=" + rreq->getDestAddr().str() +
                 ", rreqId=" + std::to_string(rreq->getRreqId()));*/
+        logCbrRrepDecision(rreq, sourceAddr, getLocalCbr(), "duplicate_drop");
         EV_WARN << "The same packet has arrived within PATH_DISCOVERY_TIME= " << pathDiscoveryTime << ". Discarding it" << endl;
         return;
     }
@@ -1052,6 +1312,7 @@ void Aodv::handleRREQ(const Ptr<Rreq>& rreq, const L3Address& sourceAddr, unsign
 
     // check (i)
     if (rreq->getDestAddr() == getSelfIPAddress()) {
+        logCbrRrepDecision(rreq, sourceAddr, getLocalCbr(), "destination_reply");
         EV_INFO << "I am the destination node for which the route was requested" << endl;
 
         // create RREP
@@ -1070,19 +1331,35 @@ void Aodv::handleRREQ(const Ptr<Rreq>& rreq, const L3Address& sourceAddr, unsign
         EV_INFO << "I am an intermediate node who has information about a route to " << rreq->getDestAddr() << endl;
 
         if (destRoute->getNextHopAsGeneric() == sourceAddr) {
+            logCbrRrepDecision(rreq, sourceAddr, getLocalCbr(), "loop_drop");
             EV_WARN << "This RREP would make a loop. Dropping it" << endl;
             return;
         }
 
         // we respond to the RREQ, if the D (destination only) flag is not set
         if (!rreq->getDestOnlyFlag()) {
+            if (cbrRrepMetricsEnabled)
+                metricsRrepCandidateCount++;
             if (cbrBasedRrepEnabled) {
                 double localCbr = getLocalCbr();
-                if (localCbr < cbrBasedRrepThreshold) {
+                bool isDirectRouteToDestination = destRoute->getMetric() <= 1 || destRoute->getNextHopAsGeneric() == rreq->getDestAddr();
+                if (localCbr < cbrBasedRrepThreshold && !(cbrBasedRrepDirectRouteBypassEnabled && isDirectRouteToDestination)) {
+                    std::cerr << localCbr << std::endl;
+                    if (cbrRrepMetricsEnabled)
+                        metricsRrepBlockedCount++;
+                    logCbrRrepDecision(rreq, sourceAddr, localCbr, "blocked");
                     EV_INFO << "Skipping intermediate RREP because local CBR " << localCbr
-                            << " is below threshold " << cbrBasedRrepThreshold << endl;
+                            << " is above threshold " << cbrBasedRrepThreshold << endl;
                     return;
                 }
+                logCbrRrepDecision(rreq, sourceAddr, localCbr, cbrBasedRrepDirectRouteBypassEnabled && isDirectRouteToDestination && localCbr > cbrBasedRrepThreshold ? "direct_bypass_allow" : "allowed");
+            }
+            else {
+                logCbrRrepDecision(rreq, sourceAddr, getLocalCbr(), "disabled_allow");
+            }
+            if (cbrRrepMetricsEnabled) {
+                metricsRrepAllowedCount++;
+                metricsRelayParticipationCount++;
             }
             // create RREP
             auto rrep = createRREP(rreq, destRoute, reverseRoute, sourceAddr);
@@ -1104,6 +1381,7 @@ void Aodv::handleRREQ(const Ptr<Rreq>& rreq, const L3Address& sourceAddr, unsign
             return; // discard RREQ, in this case, we also do not forward it.
         }
         else
+            logCbrRrepDecision(rreq, sourceAddr, getLocalCbr(), "dest_only_forward");
             EV_INFO << "The originator indicated that only the destination may respond to this RREQ (D flag is set). Forwarding ..." << endl;
     }
 
@@ -1129,9 +1407,13 @@ void Aodv::handleRREQ(const Ptr<Rreq>& rreq, const L3Address& sourceAddr, unsign
         rreq->setUnknownSeqNumFlag(false);
 
         auto outgoingRREQ = dynamicPtrCast<Rreq>(rreq->dupShared());
+        if (cbrRrepMetricsEnabled)
+            metricsRelayParticipationCount++;
+        logCbrRrepDecision(rreq, sourceAddr, getLocalCbr(), "forward_only");
         forwardRREQ(outgoingRREQ, timeToLive);
     }
     else
+        logCbrRrepDecision(rreq, sourceAddr, getLocalCbr(), "ttl_drop");
         EV_WARN << "Can't forward the RREQ because of its small (<= 1) TTL: " << timeToLive << " or the AODV reboot has not completed yet" << endl;
 }
 
@@ -1168,6 +1450,7 @@ IRoute *Aodv::createRoute(const L3Address& destAddr, const L3Address& nextHop,
     EV_DETAIL << "Adding new route " << newRoute << endl;
     routingTable->addRoute(newRoute);
     logRouteGraphEvent("ROUTE_CREATE", destAddr, nextHop, hopCount, isActive, lifeTime);
+    logRouteCauseEvent("ROUTE_CREATE", destAddr, nextHop, hopCount, isActive, lifeTime, "createRoute");
     logRoutingTableSnapshot("ROUTE_CREATE");
 
     scheduleExpungeRoutes();
@@ -1255,6 +1538,8 @@ void Aodv::handleLinkBreakSendRERR(const L3Address& unreachableAddr)
 
             routeData->setIsActive(false);
             routeData->setLifeTime(simTime() + deletePeriod);
+            diagnosisRouteInvalidateCount++;
+            logRouteCauseEvent("ROUTE_INVALIDATE", route->getDestinationAsGeneric(), route->getNextHopAsGeneric(), route->getMetric(), false, routeData->getLifeTime(), "local_link_break");
             scheduleExpungeRoutes();
 
             UnreachableNode node;
@@ -1295,6 +1580,8 @@ void Aodv::handleLinkBreakSendRERR(const L3Address& unreachableAddr)
     }
 
     logOriginatedRerr("LOCAL_LINK_BREAK", unreachableNodes, precursorNodes);
+    diagnosisRerrOriginatedCount++;
+    logRouteCauseEvent("RERR_ORIGINATED", unreachableAddr, L3Address(), 0, false, SIMTIME_ZERO, "local_link_break");
     auto rerr = createRERR(unreachableNodes);
     rerrCount++;
 
@@ -1526,6 +1813,8 @@ void Aodv::handleRERR(const Ptr<const Rerr>& rerr, const L3Address& sourceAddr)
                     routeData->setDestSeqNum(rerr->getUnreachableNodes(j).seqNum);
                     routeData->setIsActive(false); // it means invalid, see 3. AODV Terminology p.3. in RFC 3561
                     routeData->setLifeTime(simTime() + deletePeriod);
+                    diagnosisRouteInvalidateCount++;
+                    logRouteCauseEvent("ROUTE_INVALIDATE", route->getDestinationAsGeneric(), route->getNextHopAsGeneric(), route->getMetric(), false, routeData->getLifeTime(), "received_rerr");
 
                     // The RERR should contain those destinations that are part of
                     // the created list of unreachable destinations and have a non-empty
@@ -1556,6 +1845,8 @@ void Aodv::handleRERR(const Ptr<const Rerr>& rerr, const L3Address& sourceAddr)
     if (unreachableNeighbors.size() > 0 && (simTime() > rebootTime + deletePeriod || rebootTime == 0)) {
         EV_INFO << "Sending RERR to inform our neighbors about link breaks." << endl;
         logOriginatedRerr("FORWARDED_RERR", unreachableNeighbors, precursorNodes);
+        diagnosisRerrOriginatedCount++;
+        logRouteCauseEvent("RERR_ORIGINATED", sourceAddr, L3Address(), 0, false, SIMTIME_ZERO, "forwarded_rerr");
         auto newRERR = createRERR(unreachableNeighbors);
         sendAODVPacket(newRERR, addressType->getBroadcastAddress(), 1, 0);
         rerrCount++;
@@ -1598,6 +1889,29 @@ void Aodv::clearState()
     rerrCount = rreqCount = rreqId = sequenceNum = 0;
     totalOriginatedRerrCount = 0;
     addressToRreqRetries.clear();
+    metricsRreqReceivedCount = 0;
+    metricsRrepCandidateCount = 0;
+    metricsRrepAllowedCount = 0;
+    metricsRrepBlockedCount = 0;
+    metricsRouteDiscoveryStartedCount = 0;
+    metricsRouteDiscoverySucceededCount = 0;
+    metricsRouteDiscoveryFailedCount = 0;
+    metricsRrepReceivedCount = 0;
+    metricsRelayParticipationCount = 0;
+    metricsRouteCandidateCountSum = 0;
+    metricsRouteCandidateCountCount = 0;
+    metricsSelectedRouteHopCountSum = 0;
+    metricsSelectedRouteHopCountCount = 0;
+    metricsRouteDiscoveryDelaySum = SIMTIME_ZERO;
+    metricsRouteDiscoveryDelayCount = 0;
+    metricsRouteDiscoveryStartTimes.clear();
+    metricsRouteDiscoveryCandidateCounts.clear();
+    diagnosisNoRouteToForwardCount = 0;
+    diagnosisNoActiveRouteToForwardCount = 0;
+    diagnosisRouteInvalidateCount = 0;
+    diagnosisRouteExpireInactiveCount = 0;
+    diagnosisRouteDeleteCount = 0;
+    diagnosisRerrOriginatedCount = 0;
     for (auto& elem : waitForRREPTimers)
         cancelAndDelete(elem.second);
 
@@ -1636,6 +1950,14 @@ void Aodv::handleWaitForRREP(WaitForRrep *rrepTimer)
 
     ASSERT(containsKey(addressToRreqRetries, destAddr));
     if (addressToRreqRetries[destAddr] == rreqRetries) {
+        if (cbrRrepMetricsEnabled) {
+            metricsRouteDiscoveryFailedCount++;
+            auto candidateIt = metricsRouteDiscoveryCandidateCounts.find(destAddr);
+            if (candidateIt != metricsRouteDiscoveryCandidateCounts.end()) {
+                metricsRouteCandidateCountSum += candidateIt->second;
+                metricsRouteCandidateCountCount++;
+            }
+        }
         cancelRouteDiscovery(destAddr);
         EV_WARN << "Re-discovery attempts for node " << destAddr << " reached RREQ_RETRIES= " << rreqRetries << " limit. Stop sending RREQ." << endl;
         return;
@@ -1672,6 +1994,32 @@ void Aodv::completeRouteDiscovery(const L3Address& target)
 {
     EV_DETAIL << "Completing route discovery, originator " << getSelfIPAddress() << ", target " << target << endl;
     ASSERT(hasOngoingRouteDiscovery(target));
+    if (cbrRrepMetricsEnabled) {
+        metricsRouteDiscoverySucceededCount++;
+        auto startIt = metricsRouteDiscoveryStartTimes.find(target);
+        if (startIt != metricsRouteDiscoveryStartTimes.end()) {
+            metricsRouteDiscoveryDelaySum += simTime() - startIt->second;
+            metricsRouteDiscoveryDelayCount++;
+            metricsRouteDiscoveryStartTimes.erase(startIt);
+        }
+        auto candidateIt = metricsRouteDiscoveryCandidateCounts.find(target);
+        if (candidateIt != metricsRouteDiscoveryCandidateCounts.end()) {
+            metricsRouteCandidateCountSum += candidateIt->second;
+            metricsRouteCandidateCountCount++;
+            metricsRouteDiscoveryCandidateCounts.erase(candidateIt);
+        }
+        IRoute *selectedRoute = routingTable->findBestMatchingRoute(target);
+        if (selectedRoute != nullptr) {
+            metricsSelectedRouteHopCountSum += selectedRoute->getMetric();
+            metricsSelectedRouteHopCountCount++;
+        }
+    }
+    IRoute *selectedRouteForLog = routingTable->findBestMatchingRoute(target);
+    if (selectedRouteForLog != nullptr && selectedRouteForLog->getSource() == this) {
+        AodvRouteData *selectedData = dynamic_cast<AodvRouteData *>(selectedRouteForLog->getProtocolData());
+        logRouteCauseEvent("ROUTE_DISCOVERY_SELECTED", target, selectedRouteForLog->getNextHopAsGeneric(), selectedRouteForLog->getMetric(),
+                selectedData != nullptr && selectedData->isActive(), selectedData != nullptr ? selectedData->getLifeTime() : SIMTIME_ZERO, "completeRouteDiscovery");
+    }
 
     auto lt = targetAddressToDelayedPackets.lower_bound(target);
     auto ut = targetAddressToDelayedPackets.upper_bound(target);
@@ -1823,6 +2171,8 @@ void Aodv::expungeRoutes()
                     // will be lost.
                     routeData->setIsActive(false);
                     routeData->setLifeTime(simTime() + deletePeriod);
+                    diagnosisRouteExpireInactiveCount++;
+                    logRouteCauseEvent("ROUTE_EXPIRE_INACTIVE", route->getDestinationAsGeneric(), route->getNextHopAsGeneric(), route->getMetric(), false, routeData->getLifeTime(), "expungeRoutes");
                     routingTableChanged = true;
                 }
                 else {
@@ -1840,6 +2190,8 @@ void Aodv::expungeRoutes()
                                 ", node=" + std::string(getParentModule()->getFullName()) +
                                 ", event=ROUTE_DELETED, destination=" + route->getDestinationAsGeneric().str() +
                                 ", nextHop=" + route->getNextHopAsGeneric().str());*/
+                        logRouteCauseEvent("ROUTE_DELETE", route->getDestinationAsGeneric(), route->getNextHopAsGeneric(), route->getMetric(), false, routeData->getLifeTime(), "expungeRoutes");
+                        diagnosisRouteDeleteCount++;
                         routingTable->deleteRoute(route);
                         routingTableChanged = true;
                     }
@@ -1946,11 +2298,16 @@ INetfilter::IHook::Result Aodv::datagramForwardHook(Packet *datagram)
         // 3. The Lifetime field is updated to current time plus DELETE_PERIOD.
         //    Before this time, the entry SHOULD NOT be deleted.
         routeDestData->setLifeTime(simTime() + deletePeriod);
+        diagnosisNoActiveRouteToForwardCount++;
+        logRouteCauseEvent("NO_ACTIVE_ROUTE_TO_FORWARD", destAddr, routeDest->getNextHopAsGeneric(), routeDest->getMetric(), false, routeDestData->getLifeTime(), "datagramForwardHook");
 
         sendRERRWhenNoRouteToForward(destAddr);
     }
-    else if (!routeDest || routeDest->getSource() != this) // doesn't exist at all
+    else if (!routeDest || routeDest->getSource() != this) { // doesn't exist at all
+        diagnosisNoRouteToForwardCount++;
+        logRouteCauseEvent("NO_ROUTE_TO_FORWARD", destAddr, L3Address(), 0, false, SIMTIME_ZERO, "datagramForwardHook");
         sendRERRWhenNoRouteToForward(destAddr);
+    }
 
     return ACCEPT;
 }
@@ -1980,6 +2337,8 @@ void Aodv::sendRERRWhenNoRouteToForward(const L3Address& unreachableAddr)
             precursorNodes.insert(precursorNode);
     }
     logOriginatedRerr("NO_ROUTE_TO_FORWARD", unreachableNodes, precursorNodes);
+    diagnosisRerrOriginatedCount++;
+    logRouteCauseEvent("RERR_ORIGINATED", unreachableAddr, L3Address(), 0, false, SIMTIME_ZERO, "no_route_to_forward");
     auto rerr = createRERR(unreachableNodes);
 
     rerrCount++;
@@ -1990,6 +2349,8 @@ void Aodv::sendRERRWhenNoRouteToForward(const L3Address& unreachableAddr)
 void Aodv::cancelRouteDiscovery(const L3Address& destAddr)
 {
     ASSERT(hasOngoingRouteDiscovery(destAddr));
+    metricsRouteDiscoveryStartTimes.erase(destAddr);
+    metricsRouteDiscoveryCandidateCounts.erase(destAddr);
     auto lt = targetAddressToDelayedPackets.lower_bound(destAddr);
     auto ut = targetAddressToDelayedPackets.upper_bound(destAddr);
     for (auto it = lt; it != ut; it++)

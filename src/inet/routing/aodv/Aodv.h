@@ -103,6 +103,11 @@ class INET_API Aodv : public RoutingProtocolBase, public NetfilterBase::HookBase
     bool enableSummary1sLog = false;
     bool cbrBasedRrepEnabled = false;
     int cbrBasedRrepThreshold = 0;
+    bool cbrBasedRrepDirectRouteBypassEnabled = false;
+    bool cbrRrepMetricsEnabled = false;
+    bool cbrRrepDecisionLogEnabled = false;
+    bool cbrRouteCauseLogEnabled = false;
+    bool transmissionFailureDiagnosisLogEnabled = false;
 
     // the following parameters are calculated from the parameters defined above
     // see the NED file for more info
@@ -130,6 +135,29 @@ class INET_API Aodv : public RoutingProtocolBase, public NetfilterBase::HookBase
     unsigned int summaryRerrUnreachableSum = 0;
     unsigned int summaryRerrPrecursorSum = 0;
     std::map<L3Address, unsigned int> addressToRreqRetries; // number of re-discovery attempts per address
+    unsigned int metricsRreqReceivedCount = 0;
+    unsigned int metricsRrepCandidateCount = 0;
+    unsigned int metricsRrepAllowedCount = 0;
+    unsigned int metricsRrepBlockedCount = 0;
+    unsigned int metricsRouteDiscoveryStartedCount = 0;
+    unsigned int metricsRouteDiscoverySucceededCount = 0;
+    unsigned int metricsRouteDiscoveryFailedCount = 0;
+    unsigned int metricsRrepReceivedCount = 0;
+    unsigned int metricsRelayParticipationCount = 0;
+    unsigned int metricsRouteCandidateCountSum = 0;
+    unsigned int metricsRouteCandidateCountCount = 0;
+    unsigned int metricsSelectedRouteHopCountSum = 0;
+    unsigned int metricsSelectedRouteHopCountCount = 0;
+    simtime_t metricsRouteDiscoveryDelaySum = SIMTIME_ZERO;
+    unsigned int metricsRouteDiscoveryDelayCount = 0;
+    std::map<L3Address, simtime_t> metricsRouteDiscoveryStartTimes;
+    std::map<L3Address, unsigned int> metricsRouteDiscoveryCandidateCounts;
+    unsigned int diagnosisNoRouteToForwardCount = 0;
+    unsigned int diagnosisNoActiveRouteToForwardCount = 0;
+    unsigned int diagnosisRouteInvalidateCount = 0;
+    unsigned int diagnosisRouteExpireInactiveCount = 0;
+    unsigned int diagnosisRouteDeleteCount = 0;
+    unsigned int diagnosisRerrOriginatedCount = 0;
 
     // self messages
     cMessage *helloMsgTimer = nullptr; // timer to send hello messages (only if the feature is enabled)
@@ -175,6 +203,12 @@ class INET_API Aodv : public RoutingProtocolBase, public NetfilterBase::HookBase
     void logRoutingTableSnapshot(const char *reason);
     void appendAodvMetric(const std::string& fileName, const std::string& line) const;
     void logSummary1s();
+    void logCbrRrepMetrics1s();
+    void logTransmissionFailureDiagnosis1s();
+    int countCurrentNeighbors() const;
+    void ensureCbrRrepDecisionLogFile() const;
+    void logCbrRrepDecision(const Ptr<Rreq>& rreq, const L3Address& sourceAddr, double localCbr, const char *decision) const;
+    void logRouteCauseEvent(const char *event, const L3Address& routeDest, const L3Address& nextHop, unsigned int hopCount, bool isActive, simtime_t lifeTime, const char *reason) const;
 
     /* Control Packet handlers */
     void handleRREP(const Ptr<Rrep>& rrep, const L3Address& sourceAddr);

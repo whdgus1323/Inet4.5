@@ -105,6 +105,7 @@ class INET_API Radio : public PhysicalLayerBase, public virtual IRadio
     simtime_t cbrLastUpdateTime = SIMTIME_ZERO;
     simtime_t cbrCurrentWindowStart = SIMTIME_ZERO;
     simtime_t cbrBusyTime = SIMTIME_ZERO;
+    double cbrLastCompletedWindowRatio = 0.0;
     //@}
 
     /** Gates */

@@ -819,7 +819,7 @@ double Radio::getCurrentCbr()
 
     simtime_t elapsed = simTime() - cbrCurrentWindowStart;
     if (elapsed <= SIMTIME_ZERO)
-        return 0.0;
+        return cbrLastCompletedWindowRatio;
 
     simtime_t effectiveWindow = std::min(elapsed, cbrWindow);
     double ratio = busyTime.dbl() / effectiveWindow.dbl();
@@ -832,6 +832,13 @@ double Radio::getCurrentCbr()
 
 void Radio::writeCbrWindow(simtime_t windowStart, simtime_t busyTime)
 {
+    double ratio = cbrWindow > SIMTIME_ZERO ? busyTime.dbl() / cbrWindow.dbl() : 0.0;
+    if (ratio < 0.0)
+        ratio = 0.0;
+    if (ratio > 1.0)
+        ratio = 1.0;
+    cbrLastCompletedWindowRatio = ratio;
+
     if (pwd.empty())
         return;
 
@@ -848,7 +855,6 @@ void Radio::writeCbrWindow(simtime_t windowStart, simtime_t busyTime)
 
     cModule *node = getContainingNode(this);
     int nodeId = node != nullptr ? node->getIndex() : -1;
-    double ratio = cbrWindow > SIMTIME_ZERO ? busyTime.dbl() / cbrWindow.dbl() : 0.0;
     int percentage = (int)std::lround(100.0 * ratio);
     if (percentage < 0)
         percentage = 0;

@@ -42,6 +42,11 @@ simple Aodv like IApp
         bool enableSummary1sLog = default(true);
         bool cbrBasedRrepEnabled = default(false);
         int cbrBasedRrepThreshold = default(10);
+        bool cbrBasedRrepDirectRouteBypassEnabled = default(false);
+        bool cbrRrepMetricsEnabled = default(false);
+        bool cbrRrepDecisionLogEnabled = default(false);
+        bool cbrRouteCauseLogEnabled = default(false);
+        bool transmissionFailureDiagnosisLogEnabled = default(false);
         string networkProtocolModule = default("^.ipv4.ip");
         bool askGratuitousRREP = default(false); // see RFC 3561: 6.6.3
         bool useHelloMessages = default(false); // see RFC 3561: 6.9
