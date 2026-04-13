@@ -104,6 +104,11 @@ class INET_API Aodv : public RoutingProtocolBase, public NetfilterBase::HookBase
     bool cbrBasedRrepEnabled = false;
     int cbrBasedRrepThreshold = 0;
     bool cbrBasedRrepDirectRouteBypassEnabled = false;
+    bool cbrBasedRrepDelayEnabled = false;
+    int cbrBasedRrepModerateThreshold = 0;
+    int cbrBasedRrepHighThreshold = 0;
+    simtime_t cbrBasedRrepModerateDelay;
+    simtime_t cbrBasedRrepHighDelay;
     bool cbrRrepMetricsEnabled = false;
     bool cbrRrepDecisionLogEnabled = false;
     bool cbrRouteCauseLogEnabled = false;
@@ -216,11 +221,12 @@ class INET_API Aodv : public RoutingProtocolBase, public NetfilterBase::HookBase
     void handleRERR(const Ptr<const Rerr>& rerr, const L3Address& sourceAddr);
     void handleHelloMessage(const Ptr<Rrep>& helloMessage);
     void handleRREPACK(const Ptr<const RrepAck>& rrepACK, const L3Address& neighborAddr);
+    simtime_t computeIntermediateRrepDelay(double localCbr, bool isDirectRouteToDestination) const;
 
     /* Control Packet sender methods */
     void sendRREQ(const Ptr<Rreq>& rreq, const L3Address& destAddr, unsigned int timeToLive);
     void sendRREPACK(const Ptr<RrepAck>& rrepACK, const L3Address& destAddr);
-    void sendRREP(const Ptr<Rrep>& rrep, const L3Address& destAddr, unsigned int timeToLive);
+    void sendRREP(const Ptr<Rrep>& rrep, const L3Address& destAddr, unsigned int timeToLive, simtime_t delay = SIMTIME_ZERO);
     void sendGRREP(const Ptr<Rrep>& grrep, const L3Address& destAddr, unsigned int timeToLive);
 
     /* Control Packet forwarders */

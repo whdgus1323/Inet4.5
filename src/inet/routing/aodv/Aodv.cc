@@ -94,6 +94,11 @@ void Aodv::initialize(int stage)
         cbrBasedRrepEnabled = par("cbrBasedRrepEnabled");
         cbrBasedRrepThreshold = par("cbrBasedRrepThreshold");
         cbrBasedRrepDirectRouteBypassEnabled = par("cbrBasedRrepDirectRouteBypassEnabled");
+        cbrBasedRrepDelayEnabled = par("cbrBasedRrepDelayEnabled");
+        cbrBasedRrepModerateThreshold = par("cbrBasedRrepModerateThreshold");
+        cbrBasedRrepHighThreshold = par("cbrBasedRrepHighThreshold");
+        cbrBasedRrepModerateDelay = par("cbrBasedRrepModerateDelay");
+        cbrBasedRrepHighDelay = par("cbrBasedRrepHighDelay");
         cbrRrepMetricsEnabled = par("cbrRrepMetricsEnabled");
         cbrRrepDecisionLogEnabled = par("cbrRrepDecisionLogEnabled");
         cbrRouteCauseLogEnabled = par("cbrRouteCauseLogEnabled");
@@ -417,7 +422,7 @@ void Aodv::sendRREQ(const Ptr<Rreq>& rreq, const L3Address& destAddr, unsigned i
     rreqCount++;
 }
 
-void Aodv::sendRREP(const Ptr<Rrep>& rrep, const L3Address& destAddr, unsigned int timeToLive)
+void Aodv::sendRREP(const Ptr<Rrep>& rrep, const L3Address& destAddr, unsigned int timeToLive, simtime_t delay)
 {
     EV_INFO << "Sending Route Reply to " << destAddr << endl;
     /*
@@ -456,7 +461,20 @@ void Aodv::sendRREP(const Ptr<Rrep>& rrep, const L3Address& destAddr, unsigned i
 
         rescheduleAfter(nextHopWait, rrepAckTimer);
     }
-    sendAODVPacket(rrep, nextHop, timeToLive, 0);
+    sendAODVPacket(rrep, nextHop, timeToLive, delay.dbl());
+}
+
+simtime_t Aodv::computeIntermediateRrepDelay(double localCbr, bool isDirectRouteToDestination) const
+{
+    if (!cbrBasedRrepDelayEnabled)
+        return SIMTIME_ZERO;
+    if (cbrBasedRrepDirectRouteBypassEnabled && isDirectRouteToDestination)
+        return SIMTIME_ZERO;
+    if (localCbr >= cbrBasedRrepHighThreshold)
+        return cbrBasedRrepHighDelay;
+    if (localCbr >= cbrBasedRrepModerateThreshold)
+        return cbrBasedRrepModerateDelay;
+    return SIMTIME_ZERO;
 }
 
 const Ptr<Rreq> Aodv::createRREQ(const L3Address& destAddr)
@@ -1340,32 +1358,32 @@ void Aodv::handleRREQ(const Ptr<Rreq>& rreq, const L3Address& sourceAddr, unsign
         if (!rreq->getDestOnlyFlag()) {
             if (cbrRrepMetricsEnabled)
                 metricsRrepCandidateCount++;
+            double localCbr = getLocalCbr();
+            bool isDirectRouteToDestination = destRoute->getMetric() <= 1 || destRoute->getNextHopAsGeneric() == rreq->getDestAddr();
             if (cbrBasedRrepEnabled) {
-                double localCbr = getLocalCbr();
-                bool isDirectRouteToDestination = destRoute->getMetric() <= 1 || destRoute->getNextHopAsGeneric() == rreq->getDestAddr();
                 if (localCbr < cbrBasedRrepThreshold && !(cbrBasedRrepDirectRouteBypassEnabled && isDirectRouteToDestination)) {
-                    std::cerr << localCbr << std::endl;
                     if (cbrRrepMetricsEnabled)
                         metricsRrepBlockedCount++;
                     logCbrRrepDecision(rreq, sourceAddr, localCbr, "blocked");
                     EV_INFO << "Skipping intermediate RREP because local CBR " << localCbr
-                            << " is above threshold " << cbrBasedRrepThreshold << endl;
+                            << " is below threshold " << cbrBasedRrepThreshold << endl;
                     return;
                 }
-                logCbrRrepDecision(rreq, sourceAddr, localCbr, cbrBasedRrepDirectRouteBypassEnabled && isDirectRouteToDestination && localCbr > cbrBasedRrepThreshold ? "direct_bypass_allow" : "allowed");
+                logCbrRrepDecision(rreq, sourceAddr, localCbr, cbrBasedRrepDirectRouteBypassEnabled && isDirectRouteToDestination && localCbr < cbrBasedRrepThreshold ? "direct_bypass_allow" : "allowed");
             }
             else {
-                logCbrRrepDecision(rreq, sourceAddr, getLocalCbr(), "disabled_allow");
+                logCbrRrepDecision(rreq, sourceAddr, localCbr, "disabled_allow");
             }
             if (cbrRrepMetricsEnabled) {
                 metricsRrepAllowedCount++;
                 metricsRelayParticipationCount++;
             }
+            simtime_t intermediateRrepDelay = computeIntermediateRrepDelay(localCbr, isDirectRouteToDestination);
             // create RREP
             auto rrep = createRREP(rreq, destRoute, reverseRoute, sourceAddr);
 
             // send to the originator
-            sendRREP(rrep, rreq->getOriginatorAddr(), 255);
+            sendRREP(rrep, rreq->getOriginatorAddr(), 255, intermediateRrepDelay);
 
             if (rreq->getGratuitousRREPFlag()) {
                 // The gratuitous RREP is then sent to the next hop along the path to

@@ -43,6 +43,11 @@ simple Aodv like IApp
         bool cbrBasedRrepEnabled = default(false);
         int cbrBasedRrepThreshold = default(10);
         bool cbrBasedRrepDirectRouteBypassEnabled = default(false);
+        bool cbrBasedRrepDelayEnabled = default(false);
+        int cbrBasedRrepModerateThreshold = default(30);
+        int cbrBasedRrepHighThreshold = default(50);
+        double cbrBasedRrepModerateDelay @unit(s) = default(5ms);
+        double cbrBasedRrepHighDelay @unit(s) = default(10ms);
         bool cbrRrepMetricsEnabled = default(false);
         bool cbrRrepDecisionLogEnabled = default(false);
         bool cbrRouteCauseLogEnabled = default(false);
