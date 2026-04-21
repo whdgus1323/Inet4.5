@@ -9,6 +9,8 @@
 
 #include <filesystem>
 #include <fstream>
+#include <array>
+#include <cmath>
 #include <sstream>
 
 #include "inet/common/IProtocolRegistrationListener.h"
@@ -60,6 +62,28 @@ std::string joinUnreachableNodes(const std::vector<UnreachableNode>& nodes)
     return os.str();
 }
 
+double clamp01(double value)
+{
+    return std::max(0.0, std::min(1.0, value));
+}
+
+double relu(double value)
+{
+    return value > 0 ? value : 0;
+}
+
+double sigmoid(double value)
+{
+    return 1.0 / (1.0 + std::exp(-value));
+}
+
+double softplus(double value)
+{
+    if (value > 20.0)
+        return value;
+    return std::log1p(std::exp(value));
+}
+
 } // namespace
 
 Define_Module(Aodv);
@@ -93,7 +117,19 @@ void Aodv::initialize(int stage)
         enableSummary1sLog = par("enableSummary1sLog");
         cbrBasedRrepEnabled = par("cbrBasedRrepEnabled");
         cbrBasedRrepThreshold = par("cbrBasedRrepThreshold");
+        cbrBasedRrepCompareMode = par("cbrBasedRrepCompareMode").stdstringValue();
+        cbrBasedRrepRangeEnabled = par("cbrBasedRrepRangeEnabled");
+        cbrBasedRrepLowThreshold = par("cbrBasedRrepLowThreshold");
+        cbrBasedRrepHighThresholdForRange = par("cbrBasedRrepHighThresholdForRange");
         cbrBasedRrepDirectRouteBypassEnabled = par("cbrBasedRrepDirectRouteBypassEnabled");
+        dlBasedRrepEnabled = par("dlBasedRrepEnabled");
+        dlBasedRrepScoreThreshold = par("dlBasedRrepScoreThreshold");
+        dlBasedRrepCompareMode = par("dlBasedRrepCompareMode").stdstringValue();
+        dlBasedRrepNeighborNorm = par("dlBasedRrepNeighborNorm");
+        dlBasedRrepHopNorm = par("dlBasedRrepHopNorm");
+        dlBasedRrepThresholdMin = par("dlBasedRrepThresholdMin");
+        dlBasedRrepThresholdMax = par("dlBasedRrepThresholdMax");
+        dlBasedRrepMinThresholdGap = par("dlBasedRrepMinThresholdGap");
         cbrBasedRrepDelayEnabled = par("cbrBasedRrepDelayEnabled");
         cbrBasedRrepModerateThreshold = par("cbrBasedRrepModerateThreshold");
         cbrBasedRrepHighThreshold = par("cbrBasedRrepHighThreshold");
@@ -103,6 +139,7 @@ void Aodv::initialize(int stage)
         cbrRrepDecisionLogEnabled = par("cbrRrepDecisionLogEnabled");
         cbrRouteCauseLogEnabled = par("cbrRouteCauseLogEnabled");
         transmissionFailureDiagnosisLogEnabled = par("transmissionFailureDiagnosisLogEnabled");
+        loadDlBasedRrepParameters();
 
         aodvUDPPort = par("udpPort");
         askGratuitousRREP = par("askGratuitousRREP");
@@ -440,6 +477,10 @@ void Aodv::sendRREP(const Ptr<Rrep>& rrep, const L3Address& destAddr, unsigned i
     // the next hop node to which the RREP is forwarded.
 
     IRoute *destRoute = routingTable->findBestMatchingRoute(destAddr);
+    if (destRoute == nullptr) {
+        EV_WARN << "Cannot send RREP to " << destAddr << ": no matching route exists anymore" << endl;
+        return;
+    }
     const L3Address& nextHop = destRoute->getNextHopAsGeneric();
     AodvRouteData *destRouteData = check_and_cast<AodvRouteData *>(destRoute->getProtocolData());
     destRouteData->addPrecursor(nextHop);
@@ -475,6 +516,147 @@ simtime_t Aodv::computeIntermediateRrepDelay(double localCbr, bool isDirectRoute
     if (localCbr >= cbrBasedRrepModerateThreshold)
         return cbrBasedRrepModerateDelay;
     return SIMTIME_ZERO;
+}
+
+bool Aodv::shouldBlockByMode(double value, double threshold, const std::string& mode) const
+{
+    if (mode == "low")
+        return value < threshold;
+    if (mode == "high")
+        return value > threshold;
+    throw cRuntimeError("Unsupported compare mode '%s'. Use 'low' or 'high'.", mode.c_str());
+}
+
+const char *Aodv::describeModeRelation(const std::string& mode) const
+{
+    if (mode == "low")
+        return "below";
+    if (mode == "high")
+        return "above";
+    return "outside";
+}
+
+bool Aodv::isOutsideConfiguredCbrRange(double localCbr) const
+{
+    if (!cbrBasedRrepRangeEnabled)
+        return false;
+    return !(cbrBasedRrepLowThreshold < localCbr && localCbr < cbrBasedRrepHighThresholdForRange);
+}
+
+std::vector<double> Aodv::parseDoubleList(const char *text) const
+{
+    std::vector<double> values;
+    std::istringstream input(text ? text : "");
+    double value = 0;
+    while (input >> value)
+        values.push_back(value);
+    return values;
+}
+
+void Aodv::loadDlBasedRrepParameters()
+{
+    constexpr size_t inputSize = 4;
+    constexpr size_t hidden1Size = 32;
+    constexpr size_t hidden2Size = 16;
+    constexpr size_t outputSize = 2;
+
+    dlBasedRrepHiddenWeights = parseDoubleList(par("dlBasedRrepHiddenWeights").stringValue());
+    dlBasedRrepHiddenBiases = parseDoubleList(par("dlBasedRrepHiddenBiases").stringValue());
+    dlBasedRrepHidden2Weights = parseDoubleList(par("dlBasedRrepHidden2Weights").stringValue());
+    dlBasedRrepHidden2Biases = parseDoubleList(par("dlBasedRrepHidden2Biases").stringValue());
+    dlBasedRrepOutputWeights = parseDoubleList(par("dlBasedRrepOutputWeights").stringValue());
+    dlBasedRrepOutputBiases = parseDoubleList(par("dlBasedRrepOutputBias").stringValue());
+
+    if (cbrBasedRrepCompareMode != "low" && cbrBasedRrepCompareMode != "high")
+        throw cRuntimeError("cbrBasedRrepCompareMode must be 'low' or 'high'");
+    if (cbrBasedRrepRangeEnabled && cbrBasedRrepLowThreshold >= cbrBasedRrepHighThresholdForRange)
+        throw cRuntimeError("cbrBasedRrepLowThreshold must be smaller than cbrBasedRrepHighThresholdForRange");
+
+    if (!dlBasedRrepEnabled)
+        return;
+
+    if (dlBasedRrepCompareMode != "low" && dlBasedRrepCompareMode != "high")
+        throw cRuntimeError("dlBasedRrepCompareMode must be 'low' or 'high'");
+
+    if (dlBasedRrepNeighborNorm <= 0)
+        throw cRuntimeError("dlBasedRrepNeighborNorm must be positive");
+    if (dlBasedRrepHopNorm <= 0)
+        throw cRuntimeError("dlBasedRrepHopNorm must be positive");
+    if (dlBasedRrepThresholdMin >= dlBasedRrepThresholdMax)
+        throw cRuntimeError("dlBasedRrepThresholdMin must be smaller than dlBasedRrepThresholdMax");
+    if (dlBasedRrepMinThresholdGap < 0)
+        throw cRuntimeError("dlBasedRrepMinThresholdGap must be non-negative");
+    if (dlBasedRrepMinThresholdGap > dlBasedRrepThresholdMax - dlBasedRrepThresholdMin)
+        throw cRuntimeError("dlBasedRrepMinThresholdGap must not exceed the threshold range");
+    if (dlBasedRrepHiddenWeights.size() != inputSize * hidden1Size)
+        throw cRuntimeError("dlBasedRrepHiddenWeights must contain exactly %zu values (4x32)", inputSize * hidden1Size);
+    if (dlBasedRrepHiddenBiases.size() != hidden1Size)
+        throw cRuntimeError("dlBasedRrepHiddenBiases must contain exactly %zu values", hidden1Size);
+    if (dlBasedRrepHidden2Weights.size() != hidden1Size * hidden2Size)
+        throw cRuntimeError("dlBasedRrepHidden2Weights must contain exactly %zu values (32x16)", hidden1Size * hidden2Size);
+    if (dlBasedRrepHidden2Biases.size() != hidden2Size)
+        throw cRuntimeError("dlBasedRrepHidden2Biases must contain exactly %zu values", hidden2Size);
+    if (dlBasedRrepOutputWeights.size() != hidden2Size * outputSize)
+        throw cRuntimeError("dlBasedRrepOutputWeights must contain exactly %zu values (16x2)", hidden2Size * outputSize);
+    if (dlBasedRrepOutputBiases.size() != outputSize)
+        throw cRuntimeError("dlBasedRrepOutputBias must contain exactly %zu values", outputSize);
+}
+
+std::pair<double, double> Aodv::inferDlBasedRrepThresholdRange(double localCbr, int neighborCount, unsigned int hopCount, bool isDirectRouteToDestination) const
+{
+    constexpr size_t inputSize = 4;
+    constexpr size_t hidden1Size = 32;
+    constexpr size_t hidden2Size = 16;
+    constexpr size_t outputSize = 2;
+
+    std::array<double, 4> inputs = {
+        clamp01(localCbr / 100.0),
+        clamp01(static_cast<double>(neighborCount) / dlBasedRrepNeighborNorm),
+        clamp01(static_cast<double>(hopCount) / dlBasedRrepHopNorm),
+        isDirectRouteToDestination ? 1.0 : 0.0
+    };
+
+    std::array<double, hidden1Size> hidden1 = {};
+    for (size_t neuron = 0; neuron < hidden1.size(); ++neuron) {
+        double sum = dlBasedRrepHiddenBiases[neuron];
+        for (size_t feature = 0; feature < inputSize; ++feature)
+            sum += dlBasedRrepHiddenWeights[neuron * inputSize + feature] * inputs[feature];
+        hidden1[neuron] = relu(sum);
+    }
+
+    std::array<double, hidden2Size> hidden2 = {};
+    for (size_t neuron = 0; neuron < hidden2.size(); ++neuron) {
+        double sum = dlBasedRrepHidden2Biases[neuron];
+        for (size_t feature = 0; feature < hidden1Size; ++feature)
+            sum += dlBasedRrepHidden2Weights[neuron * hidden1Size + feature] * hidden1[feature];
+        hidden2[neuron] = relu(sum);
+    }
+
+    std::array<double, outputSize> outputs = {};
+    for (size_t outputIndex = 0; outputIndex < outputs.size(); ++outputIndex) {
+        double sum = dlBasedRrepOutputBiases[outputIndex];
+        for (size_t neuron = 0; neuron < hidden2Size; ++neuron)
+            sum += dlBasedRrepOutputWeights[outputIndex * hidden2Size + neuron] * hidden2[neuron];
+        outputs[outputIndex] = sum;
+    }
+
+    double valueRange = dlBasedRrepThresholdMax - dlBasedRrepThresholdMin;
+    double effectiveMinGap = std::min(dlBasedRrepMinThresholdGap, valueRange);
+    double maxGapExtra = std::max(0.0, valueRange - effectiveMinGap);
+
+    double centerNorm = sigmoid(outputs[0]);
+    double gapExtra = std::min(maxGapExtra, softplus(outputs[1]));
+    double predictedGap = effectiveMinGap + gapExtra;
+
+    double centerMin = dlBasedRrepThresholdMin + predictedGap / 2.0;
+    double centerMax = dlBasedRrepThresholdMax - predictedGap / 2.0;
+    double centerSpan = std::max(0.0, centerMax - centerMin);
+    double predictedCenter = centerMin + centerNorm * centerSpan;
+
+    double predictedLow = predictedCenter - predictedGap / 2.0;
+    double predictedHigh = predictedCenter + predictedGap / 2.0;
+
+    return {predictedLow, predictedHigh};
 }
 
 const Ptr<Rreq> Aodv::createRREQ(const L3Address& destAddr)
@@ -581,11 +763,29 @@ const Ptr<Rrep> Aodv::createRREP(const Ptr<Rreq>& rreq, IRoute *destRoute, IRout
     }
     else { // intermediate node
         // 6.6.2. Route Reply Generation by an Intermediate Node
+        if (destRoute == nullptr || originatorRoute == nullptr) {
+            EV_WARN << "Cannot build intermediate RREP because destination/originator route is missing. "
+                    << "destRoute=" << (destRoute != nullptr)
+                    << ", originatorRoute=" << (originatorRoute != nullptr) << endl;
+            rrep->setDestSeqNum(rreq->getDestSeqNum());
+            rrep->setHopCount(rreq->getHopCount());
+            rrep->setLifeTime(activeRouteTimeout.trunc(SIMTIME_MS));
+            return rrep;
+        }
 
         // it copies its known sequence number for the destination into
         // the Destination Sequence Number field in the RREP message.
-        AodvRouteData *destRouteData = check_and_cast<AodvRouteData *>(destRoute->getProtocolData());
-        AodvRouteData *originatorRouteData = check_and_cast<AodvRouteData *>(originatorRoute->getProtocolData());
+        AodvRouteData *destRouteData = dynamic_cast<AodvRouteData *>(destRoute->getProtocolData());
+        AodvRouteData *originatorRouteData = dynamic_cast<AodvRouteData *>(originatorRoute->getProtocolData());
+        if (destRouteData == nullptr || originatorRouteData == nullptr) {
+            EV_WARN << "Cannot build intermediate RREP because route protocol data is missing. "
+                    << "destRouteData=" << (destRouteData != nullptr)
+                    << ", originatorRouteData=" << (originatorRouteData != nullptr) << endl;
+            rrep->setDestSeqNum(rreq->getDestSeqNum());
+            rrep->setHopCount(rreq->getHopCount());
+            rrep->setLifeTime(activeRouteTimeout.trunc(SIMTIME_MS));
+            return rrep;
+        }
         rrep->setDestSeqNum(destRouteData->getDestSeqNum());
 
         // The intermediate node updates the forward route entry by placing the
@@ -627,7 +827,16 @@ const Ptr<Rrep> Aodv::createGratuitousRREP(const Ptr<Rreq>& rreq, IRoute *origin
     grrep->setPacketType(usingIpv6 ? RREP_IPv6 : RREP);
     grrep->setChunkLength(usingIpv6 ? B(44) : B(20));
 
-    AodvRouteData *routeData = check_and_cast<AodvRouteData *>(originatorRoute->getProtocolData());
+    AodvRouteData *routeData = dynamic_cast<AodvRouteData *>(originatorRoute->getProtocolData());
+    if (routeData == nullptr) {
+        EV_WARN << "Cannot build gratuitous RREP because originator route protocol data is missing" << endl;
+        grrep->setHopCount(originatorRoute->getMetric());
+        grrep->setDestAddr(rreq->getOriginatorAddr());
+        grrep->setDestSeqNum(rreq->getOriginatorSeqNum());
+        grrep->setOriginatorAddr(rreq->getDestAddr());
+        grrep->setLifeTime(activeRouteTimeout.trunc(SIMTIME_MS));
+        return grrep;
+    }
 
     // Hop Count                        The Hop Count as indicated in the
     //                                  node's route table entry for the
@@ -707,7 +916,12 @@ void Aodv::handleRREP(const Ptr<Rrep>& rrep, const L3Address& sourceAddr)
     unsigned int destSeqNum = rrep->getDestSeqNum();
 
     if (destRoute && destRoute->getSource() == this) { // already exists
-        destRouteData = check_and_cast<AodvRouteData *>(destRoute->getProtocolData());
+        destRouteData = dynamic_cast<AodvRouteData *>(destRoute->getProtocolData());
+        if (destRouteData == nullptr) {
+            EV_WARN << "Dropping RREP processing because destination route protocol data is missing for "
+                    << rrep->getDestAddr() << endl;
+            return;
+        }
         // Upon comparison, the existing entry is updated only in the following circumstances:
 
         // (i) the sequence number in the routing table is marked as
@@ -756,7 +970,12 @@ void Aodv::handleRREP(const Ptr<Rrep>& rrep, const L3Address& sourceAddr)
     }
     else { // create forward route for the destination: this path will be used by the originator to send data packets
         destRoute = createRoute(rrep->getDestAddr(), sourceAddr, newHopCount, true, destSeqNum, true, simTime() + lifeTime);
-        destRouteData = check_and_cast<AodvRouteData *>(destRoute->getProtocolData());
+        destRouteData = dynamic_cast<AodvRouteData *>(destRoute->getProtocolData());
+        if (destRouteData == nullptr) {
+            EV_WARN << "Dropping RREP processing because created destination route protocol data is missing for "
+                    << rrep->getDestAddr() << endl;
+            return;
+        }
     }
 
     // If the current node is not the node indicated by the Originator IP
@@ -774,7 +993,14 @@ void Aodv::handleRREP(const Ptr<Rrep>& rrep, const L3Address& sourceAddr)
         // message back (see section 6.8).
 
         if (originatorRoute && originatorRoute->getSource() == this) {
-            AodvRouteData *originatorRouteData = check_and_cast<AodvRouteData *>(originatorRoute->getProtocolData());
+            AodvRouteData *originatorRouteData = dynamic_cast<AodvRouteData *>(originatorRoute->getProtocolData());
+            if (destRoute == nullptr || destRouteData == nullptr || originatorRouteData == nullptr) {
+                EV_WARN << "Dropping RREP forward because one of the required routes/protocol data is missing. "
+                        << "destRoute=" << (destRoute != nullptr)
+                        << ", destRouteData=" << (destRouteData != nullptr)
+                        << ", originatorRouteData=" << (originatorRouteData != nullptr) << endl;
+                return;
+            }
 
             // Also, at each node the (reverse) route used to forward a
             // RREP has its lifetime changed to be the maximum of (existing-
@@ -808,9 +1034,15 @@ void Aodv::handleRREP(const Ptr<Rrep>& rrep, const L3Address& sourceAddr)
 
                 IRoute *nextHopToDestRoute = routingTable->findBestMatchingRoute(destRoute->getNextHopAsGeneric());
                 if (nextHopToDestRoute && nextHopToDestRoute->getSource() == this) {
-                    AodvRouteData *nextHopToDestRouteData = check_and_cast<AodvRouteData *>(nextHopToDestRoute->getProtocolData());
-                    nextHopToDestRouteData->addPrecursor(originatorRoute->getNextHopAsGeneric());
-                    logPrecursorAddition("FORWARD_RREP_NEXT_HOP", nextHopToDestRoute->getDestinationAsGeneric(), originatorRoute->getNextHopAsGeneric(), nextHopToDestRouteData->getPrecursorList());
+                    AodvRouteData *nextHopToDestRouteData = dynamic_cast<AodvRouteData *>(nextHopToDestRoute->getProtocolData());
+                    if (nextHopToDestRouteData != nullptr) {
+                        nextHopToDestRouteData->addPrecursor(originatorRoute->getNextHopAsGeneric());
+                        logPrecursorAddition("FORWARD_RREP_NEXT_HOP", nextHopToDestRoute->getDestinationAsGeneric(), originatorRoute->getNextHopAsGeneric(), nextHopToDestRouteData->getPrecursorList());
+                    }
+                    else {
+                        EV_WARN << "Skipping next-hop precursor update because route protocol data is missing for "
+                                << nextHopToDestRoute->getDestinationAsGeneric() << endl;
+                    }
                 }
                 auto outgoingRREP = dynamicPtrCast<Rrep>(rrep->dupShared());
                 forwardRREP(outgoingRREP, originatorRoute->getNextHopAsGeneric(), 100);
@@ -1360,16 +1592,42 @@ void Aodv::handleRREQ(const Ptr<Rreq>& rreq, const L3Address& sourceAddr, unsign
                 metricsRrepCandidateCount++;
             double localCbr = getLocalCbr();
             bool isDirectRouteToDestination = destRoute->getMetric() <= 1 || destRoute->getNextHopAsGeneric() == rreq->getDestAddr();
-            if (cbrBasedRrepEnabled) {
-                if (localCbr < cbrBasedRrepThreshold && !(cbrBasedRrepDirectRouteBypassEnabled && isDirectRouteToDestination)) {
+            bool blockedByCbrRange = isOutsideConfiguredCbrRange(localCbr);
+            if (blockedByCbrRange && !(cbrBasedRrepDirectRouteBypassEnabled && isDirectRouteToDestination)) {
+                if (cbrRrepMetricsEnabled)
+                    metricsRrepBlockedCount++;
+                logCbrRrepDecision(rreq, sourceAddr, localCbr, "range_blocked");
+                EV_INFO << "Skipping intermediate RREP because local CBR " << localCbr
+                        << " is outside allowed range (" << cbrBasedRrepLowThreshold
+                        << ", " << cbrBasedRrepHighThresholdForRange << ")" << endl;
+                return;
+            }
+            if (dlBasedRrepEnabled) {
+                auto predictedRange = inferDlBasedRrepThresholdRange(localCbr, countCurrentNeighbors(), destRoute->getMetric(), isDirectRouteToDestination);
+                bool blockedByDlMode = !(predictedRange.first < localCbr && localCbr < predictedRange.second);
+                if (blockedByDlMode && !(cbrBasedRrepDirectRouteBypassEnabled && isDirectRouteToDestination)) {
+                    if (cbrRrepMetricsEnabled)
+                        metricsRrepBlockedCount++;
+                    logCbrRrepDecision(rreq, sourceAddr, localCbr, "dl_blocked");
+                    EV_INFO << "Skipping intermediate RREP because local CBR " << localCbr
+                            << " is outside DL-predicted range (" << predictedRange.first
+                            << ", " << predictedRange.second << ")" << endl;
+                    return;
+                }
+                logCbrRrepDecision(rreq, sourceAddr, localCbr, cbrBasedRrepDirectRouteBypassEnabled && isDirectRouteToDestination && (blockedByCbrRange || blockedByDlMode) ? "dl_direct_bypass_allow" : "dl_allowed");
+            }
+            else if (cbrBasedRrepEnabled) {
+                bool blockedByCbrMode = shouldBlockByMode(localCbr, cbrBasedRrepThreshold, cbrBasedRrepCompareMode);
+                if (blockedByCbrMode && !(cbrBasedRrepDirectRouteBypassEnabled && isDirectRouteToDestination)) {
                     if (cbrRrepMetricsEnabled)
                         metricsRrepBlockedCount++;
                     logCbrRrepDecision(rreq, sourceAddr, localCbr, "blocked");
                     EV_INFO << "Skipping intermediate RREP because local CBR " << localCbr
-                            << " is below threshold " << cbrBasedRrepThreshold << endl;
+                            << " is " << describeModeRelation(cbrBasedRrepCompareMode)
+                            << " threshold " << cbrBasedRrepThreshold << endl;
                     return;
                 }
-                logCbrRrepDecision(rreq, sourceAddr, localCbr, cbrBasedRrepDirectRouteBypassEnabled && isDirectRouteToDestination && localCbr < cbrBasedRrepThreshold ? "direct_bypass_allow" : "allowed");
+                logCbrRrepDecision(rreq, sourceAddr, localCbr, cbrBasedRrepDirectRouteBypassEnabled && isDirectRouteToDestination && (blockedByCbrRange || blockedByCbrMode) ? "direct_bypass_allow" : "allowed");
             }
             else {
                 logCbrRrepDecision(rreq, sourceAddr, localCbr, "disabled_allow");
@@ -1377,6 +1635,15 @@ void Aodv::handleRREQ(const Ptr<Rreq>& rreq, const L3Address& sourceAddr, unsign
             if (cbrRrepMetricsEnabled) {
                 metricsRrepAllowedCount++;
                 metricsRelayParticipationCount++;
+            }
+            if (destRoute == nullptr || reverseRoute == nullptr || destRoute->getSource() != this || reverseRoute->getSource() != this) {
+                if (cbrRrepMetricsEnabled)
+                    metricsRrepBlockedCount++;
+                logCbrRrepDecision(rreq, sourceAddr, localCbr, "route_missing_before_rrep");
+                EV_WARN << "Skipping intermediate RREP because destination/reverse route is unavailable just before RREP creation. "
+                        << "destRoute=" << (destRoute != nullptr)
+                        << ", reverseRoute=" << (reverseRoute != nullptr) << endl;
+                return;
             }
             simtime_t intermediateRrepDelay = computeIntermediateRrepDelay(localCbr, isDirectRouteToDestination);
             // create RREP
@@ -1392,8 +1659,14 @@ void Aodv::handleRREQ(const Ptr<Rreq>& rreq, const L3Address& sourceAddr, unsign
                 // response to that (fictitious) RREQ.
 
                 IRoute *originatorRoute = routingTable->findBestMatchingRoute(rreq->getOriginatorAddr());
-                auto grrep = createGratuitousRREP(rreq, originatorRoute);
-                sendGRREP(grrep, rreq->getDestAddr(), 100);
+                if (originatorRoute == nullptr || originatorRoute->getSource() != this) {
+                    EV_WARN << "Skipping gratuitous RREP because originator route no longer exists for "
+                            << rreq->getOriginatorAddr() << endl;
+                }
+                else {
+                    auto grrep = createGratuitousRREP(rreq, originatorRoute);
+                    sendGRREP(grrep, rreq->getDestAddr(), 100);
+                }
             }
 
             return; // discard RREQ, in this case, we also do not forward it.
@@ -1530,7 +1803,12 @@ void Aodv::handleLinkBreakSendRERR(const L3Address& unreachableAddr)
         return;
 
     std::vector<UnreachableNode> unreachableNodes;
-    AodvRouteData *unreachableRouteData = check_and_cast<AodvRouteData *>(unreachableRoute->getProtocolData());
+    AodvRouteData *unreachableRouteData = dynamic_cast<AodvRouteData *>(unreachableRoute->getProtocolData());
+    if (unreachableRouteData == nullptr) {
+        EV_WARN << "Cannot send RERR because unreachable route protocol data is missing for "
+                << unreachableAddr << endl;
+        return;
+    }
 
     if (unreachableRouteData->isActive()) {
         UnreachableNode node;
@@ -2065,6 +2343,10 @@ void Aodv::sendGRREP(const Ptr<Rrep>& grrep, const L3Address& destAddr, unsigned
     EV_INFO << "Sending gratuitous Route Reply to " << destAddr << endl;
 
     IRoute *destRoute = routingTable->findBestMatchingRoute(destAddr);
+    if (destRoute == nullptr) {
+        EV_WARN << "Cannot send gratuitous RREP to " << destAddr << ": no matching route exists anymore" << endl;
+        return;
+    }
     const L3Address& nextHop = destRoute->getNextHopAsGeneric();
 
     sendAODVPacket(grrep, nextHop, timeToLive, 0);

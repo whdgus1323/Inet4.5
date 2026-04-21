@@ -11,6 +11,7 @@
 #include <map>
 #include <set>
 #include <string>
+#include <vector>
 
 #include "inet/common/ModuleRefByPar.h"
 #include "inet/networklayer/contract/IInterfaceTable.h"
@@ -100,10 +101,28 @@ class INET_API Aodv : public RoutingProtocolBase, public NetfilterBase::HookBase
     bool enablePrecursorLog = false;
     bool enableRerrFanoutLog = false;
     bool enableRoutingTableSnapshotLog = false;
-    bool enableSummary1sLog = false;
-    bool cbrBasedRrepEnabled = false;
-    int cbrBasedRrepThreshold = 0;
-    bool cbrBasedRrepDirectRouteBypassEnabled = false;
+      bool enableSummary1sLog = false;
+      bool cbrBasedRrepEnabled = false;
+      int cbrBasedRrepThreshold = 0;
+      std::string cbrBasedRrepCompareMode;
+      bool cbrBasedRrepRangeEnabled = false;
+      int cbrBasedRrepLowThreshold = 0;
+      int cbrBasedRrepHighThresholdForRange = 0;
+      bool cbrBasedRrepDirectRouteBypassEnabled = false;
+      bool dlBasedRrepEnabled = false;
+      double dlBasedRrepScoreThreshold = 0;
+      std::string dlBasedRrepCompareMode;
+      int dlBasedRrepNeighborNorm = 0;
+    int dlBasedRrepHopNorm = 0;
+    double dlBasedRrepThresholdMin = 0;
+    double dlBasedRrepThresholdMax = 100;
+    double dlBasedRrepMinThresholdGap = 0;
+    std::vector<double> dlBasedRrepHiddenWeights;
+    std::vector<double> dlBasedRrepHiddenBiases;
+    std::vector<double> dlBasedRrepHidden2Weights;
+    std::vector<double> dlBasedRrepHidden2Biases;
+    std::vector<double> dlBasedRrepOutputWeights;
+    std::vector<double> dlBasedRrepOutputBiases;
     bool cbrBasedRrepDelayEnabled = false;
     int cbrBasedRrepModerateThreshold = 0;
     int cbrBasedRrepHighThreshold = 0;
@@ -219,9 +238,15 @@ class INET_API Aodv : public RoutingProtocolBase, public NetfilterBase::HookBase
     void handleRREP(const Ptr<Rrep>& rrep, const L3Address& sourceAddr);
     void handleRREQ(const Ptr<Rreq>& rreq, const L3Address& sourceAddr, unsigned int timeToLive);
     void handleRERR(const Ptr<const Rerr>& rerr, const L3Address& sourceAddr);
-    void handleHelloMessage(const Ptr<Rrep>& helloMessage);
-    void handleRREPACK(const Ptr<const RrepAck>& rrepACK, const L3Address& neighborAddr);
-    simtime_t computeIntermediateRrepDelay(double localCbr, bool isDirectRouteToDestination) const;
+      void handleHelloMessage(const Ptr<Rrep>& helloMessage);
+      void handleRREPACK(const Ptr<const RrepAck>& rrepACK, const L3Address& neighborAddr);
+      simtime_t computeIntermediateRrepDelay(double localCbr, bool isDirectRouteToDestination) const;
+      std::vector<double> parseDoubleList(const char *text) const;
+      bool shouldBlockByMode(double value, double threshold, const std::string& mode) const;
+      const char *describeModeRelation(const std::string& mode) const;
+      bool isOutsideConfiguredCbrRange(double localCbr) const;
+      void loadDlBasedRrepParameters();
+      std::pair<double, double> inferDlBasedRrepThresholdRange(double localCbr, int neighborCount, unsigned int hopCount, bool isDirectRouteToDestination) const;
 
     /* Control Packet sender methods */
     void sendRREQ(const Ptr<Rreq>& rreq, const L3Address& destAddr, unsigned int timeToLive);
