@@ -461,19 +461,11 @@ const IReceptionResult *RadioMedium::computeReceptionResult(const IRadio *radio,
     auto chunk = transmitterPacket->peekData<inet::Chunk>();
     simtime_t latency = transmission->getEndTime() - transmission->getStartTime();
 
-    cModule *transmitterNode = getContainingNode(const_cast<cModule *>(check_and_cast<const cModule *>(transmission->getTransmitter())));
+    cModule *transmitterNode = nullptr;
+    if (auto transmitterModule = dynamic_cast<const cModule *>(transmission->getTransmitter()))
+        transmitterNode = getContainingNode(const_cast<cModule *>(transmitterModule));
 
-    if (!transmitterNode)
-    {
-        throw cRuntimeError("Error: Transmitter node is null.");
-    }
-
-    IMobility *mobility = dynamic_cast<IMobility *>(transmitterNode->getSubmodule("mobility"));
-
-    if (!mobility)
-    {
-        throw cRuntimeError("Mobility module not found in the transmitter node.");
-    }
+    IMobility *mobility = transmitterNode != nullptr ? dynamic_cast<IMobility *>(transmitterNode->getSubmodule("mobility")) : nullptr;
 
     Coord velocity = mobility->getCurrentVelocity();
     double speed = velocity.length();
@@ -528,19 +520,11 @@ const IReceptionResult *RadioMedium::computeReceptionResult(const IRadio *radio,
     auto chunk = transmitterPacket->peekData<inet::Chunk>();
     simtime_t latency = transmission->getEndTime() - transmission->getStartTime();
 
-    cModule *transmitterNode = getContainingNode(const_cast<cModule *>(check_and_cast<const cModule *>(transmission->getTransmitter())));
+    cModule *transmitterNode = nullptr;
+    if (auto transmitterModule = dynamic_cast<const cModule *>(transmission->getTransmitter()))
+        transmitterNode = getContainingNode(const_cast<cModule *>(transmitterModule));
 
-    if (!transmitterNode)
-    {
-        throw cRuntimeError("Error: Transmitter node is null.");
-    }
-
-    IMobility *mobility = dynamic_cast<IMobility *>(transmitterNode->getSubmodule("mobility"));
-
-    if (!mobility)
-    {
-        throw cRuntimeError("Mobility module not found in the transmitter node.");
-    }
+    IMobility *mobility = transmitterNode != nullptr ? dynamic_cast<IMobility *>(transmitterNode->getSubmodule("mobility")) : nullptr;
 
     /*
     Coord velocity = mobility->getCurrentVelocity();

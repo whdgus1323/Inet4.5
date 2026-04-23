@@ -95,6 +95,7 @@ void Ieee80211Mac::initialize(int stage)
     if (stage == INITSTAGE_LOCAL) {
         modeSet = Ieee80211ModeSet::getModeSet(par("modeSet"));
         fcsMode = parseFcsMode(par("fcsMode"));
+        bdStationTimeout = par("bdStationTimeout");
         mib.reference(this, "mibModule", true);
         mib->qos = par("qosStation");
 
@@ -533,12 +534,40 @@ void Ieee80211Mac::processLowerFrame(Packet *packet, const Ptr<const Ieee80211Ma
 {
     Enter_Method("processLowerFrame(\"%s\")", packet->getName());
     take(packet);
+    updateBdStationCount(header);
 
     if (mib->qos)
         hcf->processLowerFrame(packet, header);
     else
         // TODO what if the received frame is ST_DATA_WITH_QOS? drop?
         dcf->processLowerFrame(packet, header);
+}
+
+void Ieee80211Mac::updateBdStationCount(const Ptr<const Ieee80211MacHeader>& header)
+{
+    auto dataOrMgmtHeader = dynamicPtrCast<const Ieee80211DataOrMgmtHeader>(header);
+    if (dataOrMgmtHeader != nullptr) {
+        auto transmitterAddress = dataOrMgmtHeader->getTransmitterAddress();
+        if (!transmitterAddress.isUnspecified() && !transmitterAddress.isBroadcast() && transmitterAddress != mib->address)
+            bdStations[transmitterAddress] = simTime();
+    }
+
+    for (auto it = bdStations.begin(); it != bdStations.end(); ) {
+        if (simTime() - it->second > bdStationTimeout)
+            it = bdStations.erase(it);
+        else
+            ++it;
+    }
+}
+
+int Ieee80211Mac::getBdStationCount() const
+{
+    int count = 0;
+    for (const auto& station : bdStations) {
+        if (simTime() - station.second <= bdStationTimeout)
+            count++;
+    }
+    return count;
 }
 
 // FIXME

@@ -86,6 +86,7 @@ module Ieee80211Mac extends MacProtocolBase like IIeee80211Mac
         bool qosStation = default(false);
         bool bdRepetitionEnabled = default(false);
         int bdRepetitions = default(1); // 수정: 2026-03-11
+        double bdStationTimeout @unit(s) = default(1s);
         string bdRepetitionTarget @enum("rreq","rerr","hello") = default("rreq");
 
         *.mibModule = default(absPath(this.mibModule));

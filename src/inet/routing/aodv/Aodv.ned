@@ -70,6 +70,7 @@ simple Aodv like IApp
         bool cbrRrepDecisionLogEnabled = default(false);
         bool cbrRouteCauseLogEnabled = default(false);
         bool transmissionFailureDiagnosisLogEnabled = default(false);
+        bool useBdStationCount = default(false);
         string networkProtocolModule = default("^.ipv4.ip");
         bool askGratuitousRREP = default(false); // see RFC 3561: 6.6.3
         bool useHelloMessages = default(false); // see RFC 3561: 6.9

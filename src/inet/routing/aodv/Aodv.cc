@@ -19,6 +19,7 @@
 #include "inet/common/packet/Packet.h"
 #include "inet/common/stlutils.h"
 #include "inet/linklayer/common/InterfaceTag_m.h"
+#include "inet/linklayer/ieee80211/mac/Ieee80211Mac.h"
 #include "inet/networklayer/common/HopLimitTag_m.h"
 #include "inet/networklayer/common/L3AddressResolver.h"
 #include "inet/networklayer/common/L3AddressTag_m.h"
@@ -139,6 +140,7 @@ void Aodv::initialize(int stage)
         cbrRrepDecisionLogEnabled = par("cbrRrepDecisionLogEnabled");
         cbrRouteCauseLogEnabled = par("cbrRouteCauseLogEnabled");
         transmissionFailureDiagnosisLogEnabled = par("transmissionFailureDiagnosisLogEnabled");
+        useBdStationCount = par("useBdStationCount");
         loadDlBasedRrepParameters();
 
         aodvUDPPort = par("udpPort");
@@ -1168,6 +1170,9 @@ double Aodv::getLocalCbr() const
 
 int Aodv::countCurrentNeighbors() const
 {
+    if (useBdStationCount)
+        return getBdStationCount();
+
     if (host == nullptr)
         return 0;
     cModule *mobilityModule = host->getSubmodule("mobility");
@@ -1207,6 +1212,35 @@ int Aodv::countCurrentNeighbors() const
         }
     }
     return neighborCount;
+}
+
+int Aodv::getBdStationCount() const
+{
+    auto *networkInterface = interfaceTable->findInterfaceByName(par("interface"));
+    if (networkInterface == nullptr)
+        return 0;
+
+    auto *interfaceModule = getSimulation()->findModuleByPath(networkInterface->getInterfaceFullPath().c_str());
+    if (interfaceModule == nullptr && host != nullptr) {
+        std::string interfaceName = networkInterface->getInterfaceName();
+        size_t digitStart = interfaceName.find_first_of("0123456789");
+        if (digitStart != std::string::npos) {
+            std::string moduleName = interfaceName.substr(0, digitStart);
+            int moduleIndex = std::stoi(interfaceName.substr(digitStart));
+            interfaceModule = host->getSubmodule(moduleName.c_str(), moduleIndex);
+        }
+        if (interfaceModule == nullptr)
+            interfaceModule = host->getSubmodule(interfaceName.c_str());
+    }
+    if (interfaceModule == nullptr)
+        return 0;
+
+    auto *macModule = interfaceModule->getSubmodule("mac");
+    auto *ieee80211Mac = dynamic_cast<ieee80211::Ieee80211Mac *>(macModule);
+    if (ieee80211Mac == nullptr)
+        return 0;
+
+    return ieee80211Mac->getBdStationCount();
 }
 
 void Aodv::logCbrRrepMetrics1s()

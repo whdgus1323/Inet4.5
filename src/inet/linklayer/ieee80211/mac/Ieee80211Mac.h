@@ -8,6 +8,8 @@
 #ifndef __INET_IEEE80211MAC_H
 #define __INET_IEEE80211MAC_H
 
+#include <map>
+
 #include "inet/common/ModuleRefByPar.h"
 #include "inet/linklayer/base/MacProtocolBase.h"
 #include "inet/linklayer/ieee80211/mac/contract/IDs.h"
@@ -51,6 +53,8 @@ class INET_API Ieee80211Mac : public MacProtocolBase
     opp_component_ptr<physicallayer::IRadio> radio;
     const physicallayer::Ieee80211ModeSet *modeSet = nullptr;
     physicallayer::IRadio::TransmissionState transmissionState = physicallayer::IRadio::TransmissionState::TRANSMISSION_STATE_UNDEFINED;
+    simtime_t bdStationTimeout = SIMTIME_ZERO;
+    std::map<MacAddress, simtime_t> bdStations;
 
     opp_component_ptr<Dcf> dcf;
     opp_component_ptr<Pcf> pcf;
@@ -71,6 +75,7 @@ class INET_API Ieee80211Mac : public MacProtocolBase
     void dcfeLower(Packet *packet,
         const Ptr<const Ieee80211MacHeader>& header);
 
+    void updateBdStationCount(const Ptr<const Ieee80211MacHeader>& header);
 
   protected:
     virtual int numInitStages() const override { return NUM_INIT_STAGES; }
@@ -121,6 +126,7 @@ class INET_API Ieee80211Mac : public MacProtocolBase
 
     virtual void processUpperFrame(Packet *packet, const Ptr<const Ieee80211DataOrMgmtHeader>& header);
     virtual void processLowerFrame(Packet *packet, const Ptr<const Ieee80211MacHeader>& header);
+    virtual int getBdStationCount() const;
 };
 
 } // namespace ieee80211

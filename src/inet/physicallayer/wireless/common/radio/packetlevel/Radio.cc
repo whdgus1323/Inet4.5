@@ -525,7 +525,8 @@ void Radio::endReception(cMessage *timer)
         double sinrMin = snir->getMin();  // 최소 SINR
         const char* packetName = signal->getTransmission()->getPacket()->getName();
 
-        int senderId = signal->getTransmission()->getTransmitter()->getId();
+        auto transmitter = signal->getTransmission()->getTransmitter();
+        int senderId = transmitter != nullptr ? transmitter->getId() : -1;
         int receiverId = getId();
 
         if (sinrAllLogEnabled && !pwd.empty()) {

@@ -132,6 +132,7 @@ class INET_API Aodv : public RoutingProtocolBase, public NetfilterBase::HookBase
     bool cbrRrepDecisionLogEnabled = false;
     bool cbrRouteCauseLogEnabled = false;
     bool transmissionFailureDiagnosisLogEnabled = false;
+    bool useBdStationCount = false;
 
     // the following parameters are calculated from the parameters defined above
     // see the NED file for more info
@@ -230,6 +231,7 @@ class INET_API Aodv : public RoutingProtocolBase, public NetfilterBase::HookBase
     void logCbrRrepMetrics1s();
     void logTransmissionFailureDiagnosis1s();
     int countCurrentNeighbors() const;
+    int getBdStationCount() const;
     void ensureCbrRrepDecisionLogFile() const;
     void logCbrRrepDecision(const Ptr<Rreq>& rreq, const L3Address& sourceAddr, double localCbr, const char *decision) const;
     void logRouteCauseEvent(const char *event, const L3Address& routeDest, const L3Address& nextHop, unsigned int hopCount, bool isActive, simtime_t lifeTime, const char *reason) const;
