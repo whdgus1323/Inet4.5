@@ -117,12 +117,32 @@ class INET_API Aodv : public RoutingProtocolBase, public NetfilterBase::HookBase
     double dlBasedRrepThresholdMin = 0;
     double dlBasedRrepThresholdMax = 100;
     double dlBasedRrepMinThresholdGap = 0;
+    bool dlBasedRrepCustomArchitectureEnabled = false;
+    int dlBasedRrepHidden1Size = 32;
+    int dlBasedRrepHidden2Size = 16;
     std::vector<double> dlBasedRrepHiddenWeights;
     std::vector<double> dlBasedRrepHiddenBiases;
     std::vector<double> dlBasedRrepHidden2Weights;
     std::vector<double> dlBasedRrepHidden2Biases;
     std::vector<double> dlBasedRrepOutputWeights;
     std::vector<double> dlBasedRrepOutputBiases;
+    bool dlBucketBasedRrepEnabled = false;
+    int dlBucketBasedRrepNeighborNorm = 0;
+    int dlBucketBasedRrepHopNorm = 0;
+    int dlBucketBasedRrepBucketRoundDigits = 2;
+    bool dlBucketBasedRrepNearestFallbackEnabled = true;
+    std::string dlBucketBasedRrepLookupTable;
+    struct DlBucketBasedRrepEntry {
+        std::string key;
+        double localCbrNorm = 0;
+        double neighborNorm = 0;
+        double hopNorm = 0;
+        double isOriginatorNear = 0;
+        double lowThreshold = 0;
+        double highThreshold = 0;
+    };
+    std::map<std::string, DlBucketBasedRrepEntry> dlBucketBasedRrepEntriesByKey;
+    std::vector<DlBucketBasedRrepEntry> dlBucketBasedRrepEntries;
     bool cbrBasedRrepDelayEnabled = false;
     int cbrBasedRrepModerateThreshold = 0;
     int cbrBasedRrepHighThreshold = 0;
@@ -248,7 +268,10 @@ class INET_API Aodv : public RoutingProtocolBase, public NetfilterBase::HookBase
       const char *describeModeRelation(const std::string& mode) const;
       bool isOutsideConfiguredCbrRange(double localCbr) const;
       void loadDlBasedRrepParameters();
+      void loadDlBucketBasedRrepParameters();
       std::pair<double, double> inferDlBasedRrepThresholdRange(double localCbr, int neighborCount, unsigned int hopCount, bool isDirectRouteToDestination) const;
+      std::pair<double, double> inferDlBucketBasedRrepThresholdRange(double localCbr, int neighborCount, unsigned int rreqHopCount) const;
+      std::string buildDlBucketBasedStateKey(double localCbrNorm, double neighborNorm, double hopNorm, double isOriginatorNear) const;
 
     /* Control Packet sender methods */
     void sendRREQ(const Ptr<Rreq>& rreq, const L3Address& destAddr, unsigned int timeToLive);
