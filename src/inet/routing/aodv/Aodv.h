@@ -8,6 +8,7 @@
 #ifndef __INET_AODV_H
 #define __INET_AODV_H
 
+#include <array>
 #include <map>
 #include <set>
 #include <string>
@@ -108,25 +109,55 @@ class INET_API Aodv : public RoutingProtocolBase, public NetfilterBase::HookBase
       bool cbrBasedRrepRangeEnabled = false;
       int cbrBasedRrepLowThreshold = 0;
       int cbrBasedRrepHighThresholdForRange = 0;
+      bool cbrBasedRandomThresholdEnabled = false;
+      simtime_t cbrBasedRandomThresholdUpdateInterval;
+      double cbrBasedRandomLowMin = 0;
+      double cbrBasedRandomLowMax = 0;
+      double cbrBasedRandomHighMin = 0;
+      double cbrBasedRandomHighMax = 0;
+      double cbrBasedRandomMinGap = 0;
       bool cbrBasedRrepDirectRouteBypassEnabled = false;
       bool dlBasedRrepEnabled = false;
       double dlBasedRrepScoreThreshold = 0;
       std::string dlBasedRrepCompareMode;
+      std::string dlBasedRrepFeatureSet;
       int dlBasedRrepNeighborNorm = 0;
     int dlBasedRrepHopNorm = 0;
     double dlBasedRrepThresholdMin = 0;
     double dlBasedRrepThresholdMax = 100;
     double dlBasedRrepMinThresholdGap = 0;
+    bool dlBasedRrepDirectThresholdOutputEnabled = false;
     bool dlBasedRrepCustomArchitectureEnabled = false;
     int dlBasedRrepHidden1Size = 32;
     int dlBasedRrepHidden2Size = 16;
+    int dlBasedRrepHidden3Size = 128;
     std::vector<double> dlBasedRrepHiddenWeights;
     std::vector<double> dlBasedRrepHiddenBiases;
     std::vector<double> dlBasedRrepHidden2Weights;
     std::vector<double> dlBasedRrepHidden2Biases;
+    std::vector<double> dlBasedRrepHidden3Weights;
+    std::vector<double> dlBasedRrepHidden3Biases;
     std::vector<double> dlBasedRrepOutputWeights;
     std::vector<double> dlBasedRrepOutputBiases;
-    bool dlBucketBasedRrepEnabled = false;
+    bool dlDirectThresholdRrepEnabled = false;
+    std::string dlDirectThresholdRrepFeatureSet;
+    int dlDirectThresholdRrepNeighborNorm = 0;
+    int dlDirectThresholdRrepHopNorm = 0;
+    double dlDirectThresholdRrepThresholdMin = 0;
+    double dlDirectThresholdRrepThresholdMax = 100;
+    double dlDirectThresholdRrepMinThresholdGap = 0;
+    int dlDirectThresholdRrepHidden1Size = 256;
+    int dlDirectThresholdRrepHidden2Size = 256;
+    int dlDirectThresholdRrepHidden3Size = 128;
+    std::vector<double> dlDirectThresholdRrepHiddenWeights;
+    std::vector<double> dlDirectThresholdRrepHiddenBiases;
+    std::vector<double> dlDirectThresholdRrepHidden2Weights;
+    std::vector<double> dlDirectThresholdRrepHidden2Biases;
+    std::vector<double> dlDirectThresholdRrepHidden3Weights;
+    std::vector<double> dlDirectThresholdRrepHidden3Biases;
+    std::vector<double> dlDirectThresholdRrepOutputWeights;
+    std::vector<double> dlDirectThresholdRrepOutputBiases;
+      bool dlBucketBasedRrepEnabled = false;
     int dlBucketBasedRrepNeighborNorm = 0;
     int dlBucketBasedRrepHopNorm = 0;
     int dlBucketBasedRrepBucketRoundDigits = 2;
@@ -143,6 +174,45 @@ class INET_API Aodv : public RoutingProtocolBase, public NetfilterBase::HookBase
     };
     std::map<std::string, DlBucketBasedRrepEntry> dlBucketBasedRrepEntriesByKey;
     std::vector<DlBucketBasedRrepEntry> dlBucketBasedRrepEntries;
+    bool stateLookupBasedRrepEnabled = false;
+    bool stateLookupBasedRrepNearestFallbackEnabled = true;
+    int stateLookupBasedRrepCbrBinSize = 5;
+    int stateLookupBasedRrepNeighborBinSize = 5;
+    int stateLookupBasedRrepHopMax = 6;
+    std::string stateLookupBasedRrepPolicyCsvPath;
+    struct StateLookupBasedRrepEntry {
+        std::string key;
+        int stateCbrBin = 0;
+        int stateNeighborBin = 0;
+        int stateHopBin = 0;
+        int stateDirectBin = 0;
+        double lowThreshold = 0;
+        double highThreshold = 0;
+    };
+    std::map<std::string, StateLookupBasedRrepEntry> stateLookupBasedRrepEntriesByKey;
+    std::vector<StateLookupBasedRrepEntry> stateLookupBasedRrepEntries;
+    struct TreeBasedRrepNode {
+        bool isLeaf = false;
+        int featureIndex = -1;
+        double threshold = 0;
+        int leftIndex = -1;
+        int rightIndex = -1;
+        double value = 0;
+    };
+    using TreeBasedRrepTree = std::vector<TreeBasedRrepNode>;
+    using TreeBasedRrepEnsemble = std::vector<TreeBasedRrepTree>;
+    bool treeBasedRrepEnabled = false;
+    std::string treeBasedRrepFeatureSet;
+    int treeBasedRrepNeighborNorm = 0;
+    int treeBasedRrepHopNorm = 0;
+    double treeBasedRrepThresholdMin = 0;
+    double treeBasedRrepThresholdMax = 100;
+    double treeBasedRrepMinThresholdGap = 0;
+    std::string treeBasedRrepModel;
+    std::string treeBasedRrepLowModel;
+    std::string treeBasedRrepHighModel;
+    TreeBasedRrepEnsemble treeBasedRrepLowEnsemble;
+    TreeBasedRrepEnsemble treeBasedRrepHighEnsemble;
     bool cbrBasedRrepDelayEnabled = false;
     int cbrBasedRrepModerateThreshold = 0;
     int cbrBasedRrepHighThreshold = 0;
@@ -150,6 +220,7 @@ class INET_API Aodv : public RoutingProtocolBase, public NetfilterBase::HookBase
     simtime_t cbrBasedRrepHighDelay;
     bool cbrRrepMetricsEnabled = false;
     bool cbrRrepDecisionLogEnabled = false;
+    bool dlDirectThresholdRrepDebugLogEnabled = false;
     bool cbrRouteCauseLogEnabled = false;
     bool transmissionFailureDiagnosisLogEnabled = false;
     bool useBdStationCount = false;
@@ -203,6 +274,9 @@ class INET_API Aodv : public RoutingProtocolBase, public NetfilterBase::HookBase
     unsigned int diagnosisRouteExpireInactiveCount = 0;
     unsigned int diagnosisRouteDeleteCount = 0;
     unsigned int diagnosisRerrOriginatedCount = 0;
+    int cbrBasedRandomThresholdEpoch = -1;
+    double cbrBasedRandomActiveLowThreshold = 0;
+    double cbrBasedRandomActiveHighThreshold = 0;
 
     // self messages
     cMessage *helloMsgTimer = nullptr; // timer to send hello messages (only if the feature is enabled)
@@ -253,7 +327,9 @@ class INET_API Aodv : public RoutingProtocolBase, public NetfilterBase::HookBase
     int countCurrentNeighbors() const;
     int getBdStationCount() const;
     void ensureCbrRrepDecisionLogFile() const;
-    void logCbrRrepDecision(const Ptr<Rreq>& rreq, const L3Address& sourceAddr, double localCbr, const char *decision) const;
+    void logCbrRrepDecision(const Ptr<Rreq>& rreq, const L3Address& sourceAddr, double localCbr, const char *decision, double appliedLowThreshold, double appliedHighThreshold) const;
+    void ensureDlDirectThresholdRrepDebugLogFile() const;
+    void logDlDirectThresholdRrepDebug(const Ptr<Rreq>& rreq, const L3Address& sourceAddr, double localCbr, int neighborCount, unsigned int hopCount, bool isDirectRouteToDestination, const std::vector<double>& inputs, const std::array<double, 2>& rawOutputs, double predictedLow, double predictedHigh, const char *decision) const;
     void logRouteCauseEvent(const char *event, const L3Address& routeDest, const L3Address& nextHop, unsigned int hopCount, bool isActive, simtime_t lifeTime, const char *reason) const;
 
     /* Control Packet handlers */
@@ -266,12 +342,26 @@ class INET_API Aodv : public RoutingProtocolBase, public NetfilterBase::HookBase
       std::vector<double> parseDoubleList(const char *text) const;
       bool shouldBlockByMode(double value, double threshold, const std::string& mode) const;
       const char *describeModeRelation(const std::string& mode) const;
-      bool isOutsideConfiguredCbrRange(double localCbr) const;
+      std::pair<double, double> getActiveCbrThresholdRange();
+      bool isOutsideConfiguredCbrRange(double localCbr, double& activeLowThreshold, double& activeHighThreshold);
+      size_t getRrepFeatureInputSize(const std::string& featureSet) const;
+      std::vector<double> buildRrepFeatureInputs(const std::string& featureSet, int neighborNormDiv, int hopNormDiv, double localCbr, int neighborCount, unsigned int hopCount, bool isDirectRouteToDestination) const;
+      size_t getDlBasedRrepInputSize() const;
+      std::vector<double> buildDlBasedRrepInputs(double localCbr, int neighborCount, unsigned int hopCount, bool isDirectRouteToDestination) const;
+      TreeBasedRrepEnsemble parseTreeBasedRrepEnsemble(const std::string& text, size_t inputSize, const char *fieldName) const;
+      double evaluateTreeBasedRrepEnsemble(const TreeBasedRrepEnsemble& ensemble, const std::vector<double>& inputs, const char *fieldName) const;
       void loadDlBasedRrepParameters();
+      void loadDlDirectThresholdRrepParameters();
       void loadDlBucketBasedRrepParameters();
+      void loadStateLookupBasedRrepParameters();
+      void loadTreeBasedRrepParameters();
       std::pair<double, double> inferDlBasedRrepThresholdRange(double localCbr, int neighborCount, unsigned int hopCount, bool isDirectRouteToDestination) const;
+      std::pair<double, double> inferDlDirectThresholdRrepThresholdRange(double localCbr, int neighborCount, unsigned int hopCount, bool isDirectRouteToDestination, std::vector<double> *debugInputs = nullptr, std::array<double, 2> *debugRawOutputs = nullptr) const;
       std::pair<double, double> inferDlBucketBasedRrepThresholdRange(double localCbr, int neighborCount, unsigned int rreqHopCount) const;
+      std::pair<double, double> inferStateLookupBasedRrepThresholdRange(double localCbr, int neighborCount, unsigned int hopCount, bool isDirectRouteToDestination) const;
+      std::pair<double, double> inferTreeBasedRrepThresholdRange(double localCbr, int neighborCount, unsigned int hopCount, bool isDirectRouteToDestination) const;
       std::string buildDlBucketBasedStateKey(double localCbrNorm, double neighborNorm, double hopNorm, double isOriginatorNear) const;
+      std::string buildStateLookupBasedRrepStateKey(double localCbr, int neighborCount, unsigned int hopCount, bool isDirectRouteToDestination) const;
 
     /* Control Packet sender methods */
     void sendRREQ(const Ptr<Rreq>& rreq, const L3Address& destAddr, unsigned int timeToLive);

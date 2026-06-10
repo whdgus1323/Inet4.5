@@ -117,6 +117,7 @@ void PingApp::initialize(int stage)
         pid = -1;
         lastStart = -1;
         sendSeqNo = expectedReplySeqNo = 0;
+        lastPdrLogTime = SIMTIME_ZERO;
         for (int i = 0; i < PING_HISTORY_SIZE; i++) {
             sendTimeHistory[i] = SIMTIME_MAX;
             pongReceived[i] = false;
@@ -380,6 +381,7 @@ void PingApp::startSendingPingRequests()
     timer->setKind(PING_FIRST_ADDR);
     sentCount = 0;
     sendSeqNo = 0;
+    lastPdrLogTime = SIMTIME_ZERO;
     scheduleNextPingRequest(-1, false);
 }
 
@@ -556,10 +558,9 @@ void PingApp::sendPingRequest()
      */
 
     simtime_t currentTime = simTime();
-    static simtime_t lastPrintTime = SIMTIME_ZERO;
 
-    if (currentTime - lastPrintTime >= 1.0) {
-        lastPrintTime = currentTime;
+    if (currentTime - lastPdrLogTime >= 1.0) {
+        lastPdrLogTime = currentTime;
         std::ofstream outFile(pwd + "/PDR.txt", std::ios::app);
 
         outFile << simTime().dbl() << " : " << 100 * ((double)numPongs / (double)sendSeqNo) << endl;

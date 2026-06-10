@@ -65,6 +65,7 @@ class INET_API PingApp : public ApplicationBase, public INetworkSocket::ICallbac
     bool isRerrState = false;
 
     long expectedReplySeqNo = 0;
+    simtime_t lastPdrLogTime = SIMTIME_ZERO;
     simtime_t sendTimeHistory[PING_HISTORY_SIZE]; // times of when the requests were sent
     bool pongReceived[PING_HISTORY_SIZE];
 
@@ -119,4 +120,3 @@ class INET_API PingApp : public ApplicationBase, public INetworkSocket::ICallbac
 } // namespace inet
 
 #endif
-

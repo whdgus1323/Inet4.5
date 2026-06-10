@@ -13,6 +13,7 @@
 #include <cmath>
 #include <limits>
 #include <sstream>
+#include <stdexcept>
 
 #include "inet/common/IProtocolRegistrationListener.h"
 #include "inet/common/ModuleAccess.h"
@@ -79,6 +80,16 @@ double sigmoid(double value)
     return 1.0 / (1.0 + std::exp(-value));
 }
 
+std::string trimCopy(const std::string& text)
+{
+    const char *whitespace = " \t\r\n";
+    size_t begin = text.find_first_not_of(whitespace);
+    if (begin == std::string::npos)
+        return "";
+    size_t end = text.find_last_not_of(whitespace);
+    return text.substr(begin, end - begin + 1);
+}
+
 double softplus(double value)
 {
     if (value > 20.0)
@@ -129,24 +140,60 @@ void Aodv::initialize(int stage)
         cbrBasedRrepRangeEnabled = par("cbrBasedRrepRangeEnabled");
         cbrBasedRrepLowThreshold = par("cbrBasedRrepLowThreshold");
         cbrBasedRrepHighThresholdForRange = par("cbrBasedRrepHighThresholdForRange");
+        cbrBasedRandomThresholdEnabled = par("cbrBasedRandomThresholdEnabled");
+        cbrBasedRandomThresholdUpdateInterval = par("cbrBasedRandomThresholdUpdateInterval");
+        cbrBasedRandomLowMin = par("cbrBasedRandomLowMin");
+        cbrBasedRandomLowMax = par("cbrBasedRandomLowMax");
+        cbrBasedRandomHighMin = par("cbrBasedRandomHighMin");
+        cbrBasedRandomHighMax = par("cbrBasedRandomHighMax");
+        cbrBasedRandomMinGap = par("cbrBasedRandomMinGap");
         cbrBasedRrepDirectRouteBypassEnabled = par("cbrBasedRrepDirectRouteBypassEnabled");
         dlBasedRrepEnabled = par("dlBasedRrepEnabled");
         dlBasedRrepScoreThreshold = par("dlBasedRrepScoreThreshold");
         dlBasedRrepCompareMode = par("dlBasedRrepCompareMode").stdstringValue();
+        dlBasedRrepFeatureSet = par("dlBasedRrepFeatureSet").stdstringValue();
         dlBasedRrepNeighborNorm = par("dlBasedRrepNeighborNorm");
         dlBasedRrepHopNorm = par("dlBasedRrepHopNorm");
         dlBasedRrepThresholdMin = par("dlBasedRrepThresholdMin");
         dlBasedRrepThresholdMax = par("dlBasedRrepThresholdMax");
         dlBasedRrepMinThresholdGap = par("dlBasedRrepMinThresholdGap");
+        dlBasedRrepDirectThresholdOutputEnabled = par("dlBasedRrepDirectThresholdOutputEnabled");
         dlBasedRrepCustomArchitectureEnabled = par("dlBasedRrepCustomArchitectureEnabled");
         dlBasedRrepHidden1Size = par("dlBasedRrepHidden1Size");
         dlBasedRrepHidden2Size = par("dlBasedRrepHidden2Size");
+        dlBasedRrepHidden3Size = par("dlBasedRrepHidden3Size");
+        dlDirectThresholdRrepEnabled = par("dlDirectThresholdRrepEnabled");
+        dlDirectThresholdRrepFeatureSet = par("dlDirectThresholdRrepFeatureSet").stdstringValue();
+        dlDirectThresholdRrepNeighborNorm = par("dlDirectThresholdRrepNeighborNorm");
+        dlDirectThresholdRrepHopNorm = par("dlDirectThresholdRrepHopNorm");
+        dlDirectThresholdRrepThresholdMin = par("dlDirectThresholdRrepThresholdMin");
+        dlDirectThresholdRrepThresholdMax = par("dlDirectThresholdRrepThresholdMax");
+        dlDirectThresholdRrepMinThresholdGap = par("dlDirectThresholdRrepMinThresholdGap");
+        dlDirectThresholdRrepHidden1Size = par("dlDirectThresholdRrepHidden1Size");
+        dlDirectThresholdRrepHidden2Size = par("dlDirectThresholdRrepHidden2Size");
+        dlDirectThresholdRrepHidden3Size = par("dlDirectThresholdRrepHidden3Size");
         dlBucketBasedRrepEnabled = par("dlBucketBasedRrepEnabled");
         dlBucketBasedRrepNeighborNorm = par("dlBucketBasedRrepNeighborNorm");
         dlBucketBasedRrepHopNorm = par("dlBucketBasedRrepHopNorm");
         dlBucketBasedRrepBucketRoundDigits = par("dlBucketBasedRrepBucketRoundDigits");
         dlBucketBasedRrepNearestFallbackEnabled = par("dlBucketBasedRrepNearestFallbackEnabled");
         dlBucketBasedRrepLookupTable = par("dlBucketBasedRrepLookupTable").stdstringValue();
+        stateLookupBasedRrepEnabled = par("stateLookupBasedRrepEnabled");
+        stateLookupBasedRrepNearestFallbackEnabled = par("stateLookupBasedRrepNearestFallbackEnabled");
+        stateLookupBasedRrepCbrBinSize = par("stateLookupBasedRrepCbrBinSize");
+        stateLookupBasedRrepNeighborBinSize = par("stateLookupBasedRrepNeighborBinSize");
+        stateLookupBasedRrepHopMax = par("stateLookupBasedRrepHopMax");
+        stateLookupBasedRrepPolicyCsvPath = par("stateLookupBasedRrepPolicyCsvPath").stdstringValue();
+        treeBasedRrepEnabled = par("treeBasedRrepEnabled");
+        treeBasedRrepFeatureSet = par("treeBasedRrepFeatureSet").stdstringValue();
+        treeBasedRrepNeighborNorm = par("treeBasedRrepNeighborNorm");
+        treeBasedRrepHopNorm = par("treeBasedRrepHopNorm");
+        treeBasedRrepThresholdMin = par("treeBasedRrepThresholdMin");
+        treeBasedRrepThresholdMax = par("treeBasedRrepThresholdMax");
+        treeBasedRrepMinThresholdGap = par("treeBasedRrepMinThresholdGap");
+        treeBasedRrepModel = par("treeBasedRrepModel").stdstringValue();
+        treeBasedRrepLowModel = par("treeBasedRrepLowModel").stdstringValue();
+        treeBasedRrepHighModel = par("treeBasedRrepHighModel").stdstringValue();
         cbrBasedRrepDelayEnabled = par("cbrBasedRrepDelayEnabled");
         cbrBasedRrepModerateThreshold = par("cbrBasedRrepModerateThreshold");
         cbrBasedRrepHighThreshold = par("cbrBasedRrepHighThreshold");
@@ -154,24 +201,56 @@ void Aodv::initialize(int stage)
         cbrBasedRrepHighDelay = par("cbrBasedRrepHighDelay");
         cbrRrepMetricsEnabled = par("cbrRrepMetricsEnabled");
         cbrRrepDecisionLogEnabled = par("cbrRrepDecisionLogEnabled");
+        dlDirectThresholdRrepDebugLogEnabled = par("dlDirectThresholdRrepDebugLogEnabled");
         cbrRouteCauseLogEnabled = par("cbrRouteCauseLogEnabled");
         transmissionFailureDiagnosisLogEnabled = par("transmissionFailureDiagnosisLogEnabled");
         useBdStationCount = par("useBdStationCount");
         if (dlBasedRrepEnabled)
             loadDlBasedRrepParameters();
         else {
-            dlHiddenWeights.clear();
-            dlHiddenBiases.clear();
-            dlHidden2Weights.clear();
-            dlHidden2Biases.clear();
-            dlOutputWeights.clear();
-            dlOutputBias.clear();
+            dlBasedRrepHiddenWeights.clear();
+            dlBasedRrepHiddenBiases.clear();
+            dlBasedRrepHidden2Weights.clear();
+            dlBasedRrepHidden2Biases.clear();
+            dlBasedRrepHidden3Weights.clear();
+            dlBasedRrepHidden3Biases.clear();
+            dlBasedRrepOutputWeights.clear();
+            dlBasedRrepOutputBiases.clear();
+        }
+        if (dlDirectThresholdRrepEnabled)
+            loadDlDirectThresholdRrepParameters();
+        else {
+            dlDirectThresholdRrepHiddenWeights.clear();
+            dlDirectThresholdRrepHiddenBiases.clear();
+            dlDirectThresholdRrepHidden2Weights.clear();
+            dlDirectThresholdRrepHidden2Biases.clear();
+            dlDirectThresholdRrepHidden3Weights.clear();
+            dlDirectThresholdRrepHidden3Biases.clear();
+            dlDirectThresholdRrepOutputWeights.clear();
+            dlDirectThresholdRrepOutputBiases.clear();
         }
 
         if (dlBucketBasedRrepEnabled)
             loadDlBucketBasedRrepParameters();
         else
-            dlBucketThresholdTable.clear();
+        {
+            dlBucketBasedRrepEntriesByKey.clear();
+            dlBucketBasedRrepEntries.clear();
+        }
+
+        if (stateLookupBasedRrepEnabled)
+            loadStateLookupBasedRrepParameters();
+        else {
+            stateLookupBasedRrepEntriesByKey.clear();
+            stateLookupBasedRrepEntries.clear();
+        }
+
+        if (treeBasedRrepEnabled)
+            loadTreeBasedRrepParameters();
+        else {
+            treeBasedRrepLowEnsemble.clear();
+            treeBasedRrepHighEnsemble.clear();
+        }
 
         aodvUDPPort = par("udpPort");
         askGratuitousRREP = par("askGratuitousRREP");
@@ -568,11 +647,36 @@ const char *Aodv::describeModeRelation(const std::string& mode) const
     return "outside";
 }
 
-bool Aodv::isOutsideConfiguredCbrRange(double localCbr) const
+std::pair<double, double> Aodv::getActiveCbrThresholdRange()
 {
-    if (!cbrBasedRrepRangeEnabled)
+    if (!cbrBasedRandomThresholdEnabled)
+        return {cbrBasedRrepLowThreshold, cbrBasedRrepHighThresholdForRange};
+
+    int currentEpoch = static_cast<int>(std::floor(simTime().dbl() / cbrBasedRandomThresholdUpdateInterval.dbl()));
+    if (currentEpoch != cbrBasedRandomThresholdEpoch) {
+        double low = 0;
+        double high = 0;
+        do {
+            low = uniform(cbrBasedRandomLowMin, cbrBasedRandomLowMax);
+            high = uniform(cbrBasedRandomHighMin, cbrBasedRandomHighMax);
+        } while (high - low < cbrBasedRandomMinGap);
+        cbrBasedRandomActiveLowThreshold = low;
+        cbrBasedRandomActiveHighThreshold = high;
+        cbrBasedRandomThresholdEpoch = currentEpoch;
+    }
+
+    return {cbrBasedRandomActiveLowThreshold, cbrBasedRandomActiveHighThreshold};
+}
+
+bool Aodv::isOutsideConfiguredCbrRange(double localCbr, double& activeLowThreshold, double& activeHighThreshold)
+{
+    if (!cbrBasedRrepRangeEnabled && !cbrBasedRandomThresholdEnabled)
         return false;
-    return !(cbrBasedRrepLowThreshold < localCbr && localCbr < cbrBasedRrepHighThresholdForRange);
+
+    auto activeRange = getActiveCbrThresholdRange();
+    activeLowThreshold = activeRange.first;
+    activeHighThreshold = activeRange.second;
+    return !(activeLowThreshold < localCbr && localCbr < activeHighThreshold);
 }
 
 std::vector<double> Aodv::parseDoubleList(const char *text) const
@@ -585,15 +689,192 @@ std::vector<double> Aodv::parseDoubleList(const char *text) const
     return values;
 }
 
+size_t Aodv::getRrepFeatureInputSize(const std::string& featureSet) const
+{
+    if (featureSet == "basic4")
+        return 4;
+    if (featureSet == "local6")
+        return 6;
+    if (featureSet == "local10")
+        return 10;
+    throw cRuntimeError("featureSet must be one of 'basic4', 'local6', or 'local10'");
+}
+
+std::vector<double> Aodv::buildRrepFeatureInputs(const std::string& featureSet, int neighborNormDiv, int hopNormDiv, double localCbr, int neighborCount, unsigned int hopCount, bool isDirectRouteToDestination) const
+{
+    double localCbrNorm = clamp01(localCbr / 100.0);
+    double neighborNorm = clamp01(static_cast<double>(neighborCount) / neighborNormDiv);
+    double hopNorm = clamp01(static_cast<double>(hopCount) / hopNormDiv);
+    double diagLocalCbrNorm = localCbrNorm;
+    double rreqReceived = static_cast<double>(metricsRreqReceivedCount);
+    double rrepCandidates = static_cast<double>(metricsRrepCandidateCount);
+    double rrepBlockRate = metricsRrepCandidateCount > 0 ? static_cast<double>(metricsRrepBlockedCount) / metricsRrepCandidateCount : 0.0;
+    double routeInvalidate = static_cast<double>(diagnosisRouteInvalidateCount);
+    double routeExpireInactive = static_cast<double>(diagnosisRouteExpireInactiveCount);
+    double routeDelete = static_cast<double>(diagnosisRouteDeleteCount);
+    double rerrOriginated = static_cast<double>(diagnosisRerrOriginatedCount);
+
+    if (featureSet == "basic4") {
+        return {
+            localCbrNorm,
+            neighborNorm,
+            hopNorm,
+            isDirectRouteToDestination ? 1.0 : 0.0
+        };
+    }
+
+    if (featureSet == "local6") {
+        return {
+            diagLocalCbrNorm,
+            rreqReceived,
+            routeExpireInactive,
+            localCbrNorm,
+            routeInvalidate,
+            rerrOriginated
+        };
+    }
+
+    if (featureSet == "local10") {
+        return {
+            diagLocalCbrNorm,
+            rreqReceived,
+            routeExpireInactive,
+            localCbrNorm,
+            routeInvalidate,
+            routeDelete,
+            rerrOriginated,
+            rrepCandidates,
+            rrepBlockRate,
+            neighborNorm
+        };
+    }
+
+    throw cRuntimeError("Unsupported featureSet '%s'", featureSet.c_str());
+}
+
+size_t Aodv::getDlBasedRrepInputSize() const
+{
+    return getRrepFeatureInputSize(dlBasedRrepFeatureSet);
+}
+
+std::vector<double> Aodv::buildDlBasedRrepInputs(double localCbr, int neighborCount, unsigned int hopCount, bool isDirectRouteToDestination) const
+{
+    return buildRrepFeatureInputs(dlBasedRrepFeatureSet, dlBasedRrepNeighborNorm, dlBasedRrepHopNorm, localCbr, neighborCount, hopCount, isDirectRouteToDestination);
+}
+
+Aodv::TreeBasedRrepEnsemble Aodv::parseTreeBasedRrepEnsemble(const std::string& text, size_t inputSize, const char *fieldName) const
+{
+    TreeBasedRrepEnsemble ensemble;
+    std::stringstream treeStream(text);
+    std::string treeText;
+    while (std::getline(treeStream, treeText, '#')) {
+        if (treeText.empty())
+            continue;
+
+        TreeBasedRrepTree tree;
+        std::stringstream nodeStream(treeText);
+        std::string nodeText;
+        while (std::getline(nodeStream, nodeText, ';')) {
+            if (nodeText.empty())
+                continue;
+
+            std::stringstream tokenStream(nodeText);
+            std::string token;
+            std::vector<std::string> tokens;
+            while (std::getline(tokenStream, token, ','))
+                tokens.push_back(token);
+
+            if (tokens.empty())
+                continue;
+
+            TreeBasedRrepNode node;
+            if (tokens[0] == "L") {
+                if (tokens.size() != 2)
+                    throw cRuntimeError("%s leaf node must be formatted as L,value", fieldName);
+                node.isLeaf = true;
+                node.value = std::stod(tokens[1]);
+            }
+            else if (tokens[0] == "I") {
+                if (tokens.size() != 5)
+                    throw cRuntimeError("%s internal node must be formatted as I,feature,threshold,left,right", fieldName);
+                node.isLeaf = false;
+                node.featureIndex = std::stoi(tokens[1]);
+                node.threshold = std::stod(tokens[2]);
+                node.leftIndex = std::stoi(tokens[3]);
+                node.rightIndex = std::stoi(tokens[4]);
+                if (node.featureIndex < 0 || static_cast<size_t>(node.featureIndex) >= inputSize)
+                    throw cRuntimeError("%s feature index %d is out of range for input size %zu", fieldName, node.featureIndex, inputSize);
+            }
+            else
+                throw cRuntimeError("%s node must start with L or I", fieldName);
+
+            tree.push_back(node);
+        }
+
+        if (tree.empty())
+            continue;
+
+        for (size_t index = 0; index < tree.size(); ++index) {
+            const auto& node = tree[index];
+            if (!node.isLeaf) {
+                if (node.leftIndex < 0 || static_cast<size_t>(node.leftIndex) >= tree.size() ||
+                    node.rightIndex < 0 || static_cast<size_t>(node.rightIndex) >= tree.size())
+                {
+                    throw cRuntimeError("%s node %zu references an invalid child index", fieldName, index);
+                }
+            }
+        }
+        ensemble.push_back(tree);
+    }
+
+    if (ensemble.empty())
+        throw cRuntimeError("%s did not contain any valid trees", fieldName);
+
+    return ensemble;
+}
+
+double Aodv::evaluateTreeBasedRrepEnsemble(const TreeBasedRrepEnsemble& ensemble, const std::vector<double>& inputs, const char *fieldName) const
+{
+    if (ensemble.empty())
+        throw cRuntimeError("%s ensemble is empty", fieldName);
+
+    double sum = 0.0;
+    for (const auto& tree : ensemble) {
+        int nodeIndex = 0;
+        int guard = 0;
+        while (true) {
+            if (nodeIndex < 0 || static_cast<size_t>(nodeIndex) >= tree.size())
+                throw cRuntimeError("%s traversal reached invalid node index %d", fieldName, nodeIndex);
+            const auto& node = tree[static_cast<size_t>(nodeIndex)];
+            if (node.isLeaf) {
+                sum += node.value;
+                break;
+            }
+            double featureValue = inputs[static_cast<size_t>(node.featureIndex)];
+            nodeIndex = featureValue <= node.threshold ? node.leftIndex : node.rightIndex;
+            guard++;
+            if (guard > 100000)
+                throw cRuntimeError("%s traversal exceeded safety guard", fieldName);
+        }
+    }
+
+    return sum / static_cast<double>(ensemble.size());
+}
+
 void Aodv::loadDlBasedRrepParameters()
 {
-    constexpr size_t inputSize = 4;
     constexpr size_t outputSize = 2;
+    size_t inputSize = getDlBasedRrepInputSize();
+    int enabledPredictors = (dlBasedRrepEnabled ? 1 : 0) + (dlDirectThresholdRrepEnabled ? 1 : 0) + (dlBucketBasedRrepEnabled ? 1 : 0) + (stateLookupBasedRrepEnabled ? 1 : 0) + (treeBasedRrepEnabled ? 1 : 0);
+    if (enabledPredictors > 1)
+        throw cRuntimeError("Only one of dlBasedRrepEnabled, dlDirectThresholdRrepEnabled, dlBucketBasedRrepEnabled, stateLookupBasedRrepEnabled, or treeBasedRrepEnabled may be enabled at a time");
 
     dlBasedRrepHiddenWeights = parseDoubleList(par("dlBasedRrepHiddenWeights").stringValue());
     dlBasedRrepHiddenBiases = parseDoubleList(par("dlBasedRrepHiddenBiases").stringValue());
     dlBasedRrepHidden2Weights = parseDoubleList(par("dlBasedRrepHidden2Weights").stringValue());
     dlBasedRrepHidden2Biases = parseDoubleList(par("dlBasedRrepHidden2Biases").stringValue());
+    dlBasedRrepHidden3Weights = parseDoubleList(par("dlBasedRrepHidden3Weights").stringValue());
+    dlBasedRrepHidden3Biases = parseDoubleList(par("dlBasedRrepHidden3Biases").stringValue());
     dlBasedRrepOutputWeights = parseDoubleList(par("dlBasedRrepOutputWeights").stringValue());
     dlBasedRrepOutputBiases = parseDoubleList(par("dlBasedRrepOutputBias").stringValue());
 
@@ -601,12 +882,28 @@ void Aodv::loadDlBasedRrepParameters()
         throw cRuntimeError("cbrBasedRrepCompareMode must be 'low' or 'high'");
     if (cbrBasedRrepRangeEnabled && cbrBasedRrepLowThreshold >= cbrBasedRrepHighThresholdForRange)
         throw cRuntimeError("cbrBasedRrepLowThreshold must be smaller than cbrBasedRrepHighThresholdForRange");
+    if (cbrBasedRandomThresholdEnabled) {
+        if (cbrBasedRandomThresholdUpdateInterval <= SIMTIME_ZERO)
+            throw cRuntimeError("cbrBasedRandomThresholdUpdateInterval must be positive");
+        if (cbrBasedRandomLowMin >= cbrBasedRandomLowMax)
+            throw cRuntimeError("cbrBasedRandomLowMin must be smaller than cbrBasedRandomLowMax");
+        if (cbrBasedRandomHighMin >= cbrBasedRandomHighMax)
+            throw cRuntimeError("cbrBasedRandomHighMin must be smaller than cbrBasedRandomHighMax");
+        if (cbrBasedRandomLowMax >= cbrBasedRandomHighMax)
+            throw cRuntimeError("cbrBasedRandomLowMax must be smaller than cbrBasedRandomHighMax");
+        if (cbrBasedRandomMinGap <= 0)
+            throw cRuntimeError("cbrBasedRandomMinGap must be positive");
+        if (cbrBasedRandomHighMax - cbrBasedRandomLowMin < cbrBasedRandomMinGap)
+            throw cRuntimeError("Random threshold range cannot satisfy cbrBasedRandomMinGap");
+    }
 
     if (!dlBasedRrepEnabled)
         return;
 
     if (dlBasedRrepCompareMode != "low" && dlBasedRrepCompareMode != "high")
         throw cRuntimeError("dlBasedRrepCompareMode must be 'low' or 'high'");
+    if (dlBasedRrepFeatureSet != "basic4" && dlBasedRrepFeatureSet != "local6" && dlBasedRrepFeatureSet != "local10")
+        throw cRuntimeError("dlBasedRrepFeatureSet must be one of 'basic4', 'local6', or 'local10'");
 
     if (dlBasedRrepNeighborNorm <= 0)
         throw cRuntimeError("dlBasedRrepNeighborNorm must be positive");
@@ -622,24 +919,103 @@ void Aodv::loadDlBasedRrepParameters()
         throw cRuntimeError("dlBasedRrepHidden1Size must be positive");
     if (dlBasedRrepHidden2Size <= 0)
         throw cRuntimeError("dlBasedRrepHidden2Size must be positive");
+    if (dlBasedRrepDirectThresholdOutputEnabled && dlBasedRrepHidden3Size <= 0)
+        throw cRuntimeError("dlBasedRrepHidden3Size must be positive when dlBasedRrepDirectThresholdOutputEnabled is true");
     size_t hidden1Size = static_cast<size_t>(dlBasedRrepHidden1Size);
     size_t hidden2Size = static_cast<size_t>(dlBasedRrepHidden2Size);
+    size_t hidden3Size = static_cast<size_t>(dlBasedRrepHidden3Size);
     if (!dlBasedRrepCustomArchitectureEnabled) {
         hidden1Size = 32;
         hidden2Size = 16;
+        if (!dlBasedRrepDirectThresholdOutputEnabled)
+            hidden3Size = 0;
     }
     if (dlBasedRrepHiddenWeights.size() != inputSize * hidden1Size)
-        throw cRuntimeError("dlBasedRrepHiddenWeights must contain exactly %zu values (4x%zu)", inputSize * hidden1Size, hidden1Size);
+        throw cRuntimeError("dlBasedRrepHiddenWeights must contain exactly %zu values (%zux%zu)", inputSize * hidden1Size, inputSize, hidden1Size);
     if (dlBasedRrepHiddenBiases.size() != hidden1Size)
         throw cRuntimeError("dlBasedRrepHiddenBiases must contain exactly %zu values", hidden1Size);
     if (dlBasedRrepHidden2Weights.size() != hidden1Size * hidden2Size)
         throw cRuntimeError("dlBasedRrepHidden2Weights must contain exactly %zu values (%zux%zu)", hidden1Size * hidden2Size, hidden1Size, hidden2Size);
     if (dlBasedRrepHidden2Biases.size() != hidden2Size)
         throw cRuntimeError("dlBasedRrepHidden2Biases must contain exactly %zu values", hidden2Size);
-    if (dlBasedRrepOutputWeights.size() != hidden2Size * outputSize)
-        throw cRuntimeError("dlBasedRrepOutputWeights must contain exactly %zu values (%zux%zu)", hidden2Size * outputSize, hidden2Size, outputSize);
+    if (dlBasedRrepDirectThresholdOutputEnabled) {
+        if (dlBasedRrepHidden3Weights.size() != hidden2Size * hidden3Size)
+            throw cRuntimeError("dlBasedRrepHidden3Weights must contain exactly %zu values (%zux%zu)", hidden2Size * hidden3Size, hidden2Size, hidden3Size);
+        if (dlBasedRrepHidden3Biases.size() != hidden3Size)
+            throw cRuntimeError("dlBasedRrepHidden3Biases must contain exactly %zu values", hidden3Size);
+        if (dlBasedRrepOutputWeights.size() != hidden3Size * outputSize)
+            throw cRuntimeError("dlBasedRrepOutputWeights must contain exactly %zu values (%zux%zu)", hidden3Size * outputSize, hidden3Size, outputSize);
+    }
+    else {
+        if (!dlBasedRrepHidden3Weights.empty() && !(dlBasedRrepHidden3Weights.size() == 1 && dlBasedRrepHidden3Weights[0] == 0.0))
+            throw cRuntimeError("dlBasedRrepHidden3Weights must be empty when dlBasedRrepDirectThresholdOutputEnabled is false");
+        if (!dlBasedRrepHidden3Biases.empty() && !(dlBasedRrepHidden3Biases.size() == 1 && dlBasedRrepHidden3Biases[0] == 0.0))
+            throw cRuntimeError("dlBasedRrepHidden3Biases must be empty when dlBasedRrepDirectThresholdOutputEnabled is false");
+        if (dlBasedRrepOutputWeights.size() != hidden2Size * outputSize)
+            throw cRuntimeError("dlBasedRrepOutputWeights must contain exactly %zu values (%zux%zu)", hidden2Size * outputSize, hidden2Size, outputSize);
+    }
     if (dlBasedRrepOutputBiases.size() != outputSize)
         throw cRuntimeError("dlBasedRrepOutputBias must contain exactly %zu values", outputSize);
+}
+
+void Aodv::loadDlDirectThresholdRrepParameters()
+{
+    constexpr size_t outputSize = 2;
+    size_t inputSize = getRrepFeatureInputSize(dlDirectThresholdRrepFeatureSet);
+    int enabledPredictors = (dlBasedRrepEnabled ? 1 : 0) + (dlDirectThresholdRrepEnabled ? 1 : 0) + (dlBucketBasedRrepEnabled ? 1 : 0) + (stateLookupBasedRrepEnabled ? 1 : 0) + (treeBasedRrepEnabled ? 1 : 0);
+    if (enabledPredictors > 1)
+        throw cRuntimeError("Only one of dlBasedRrepEnabled, dlDirectThresholdRrepEnabled, dlBucketBasedRrepEnabled, stateLookupBasedRrepEnabled, or treeBasedRrepEnabled may be enabled at a time");
+
+    dlDirectThresholdRrepHiddenWeights = parseDoubleList(par("dlDirectThresholdRrepHiddenWeights").stringValue());
+    dlDirectThresholdRrepHiddenBiases = parseDoubleList(par("dlDirectThresholdRrepHiddenBiases").stringValue());
+    dlDirectThresholdRrepHidden2Weights = parseDoubleList(par("dlDirectThresholdRrepHidden2Weights").stringValue());
+    dlDirectThresholdRrepHidden2Biases = parseDoubleList(par("dlDirectThresholdRrepHidden2Biases").stringValue());
+    dlDirectThresholdRrepHidden3Weights = parseDoubleList(par("dlDirectThresholdRrepHidden3Weights").stringValue());
+    dlDirectThresholdRrepHidden3Biases = parseDoubleList(par("dlDirectThresholdRrepHidden3Biases").stringValue());
+    dlDirectThresholdRrepOutputWeights = parseDoubleList(par("dlDirectThresholdRrepOutputWeights").stringValue());
+    dlDirectThresholdRrepOutputBiases = parseDoubleList(par("dlDirectThresholdRrepOutputBias").stringValue());
+
+    if (!dlDirectThresholdRrepEnabled)
+        return;
+
+    if (dlDirectThresholdRrepFeatureSet != "basic4" && dlDirectThresholdRrepFeatureSet != "local6" && dlDirectThresholdRrepFeatureSet != "local10")
+        throw cRuntimeError("dlDirectThresholdRrepFeatureSet must be one of 'basic4', 'local6', or 'local10'");
+    if (dlDirectThresholdRrepNeighborNorm <= 0)
+        throw cRuntimeError("dlDirectThresholdRrepNeighborNorm must be positive");
+    if (dlDirectThresholdRrepHopNorm <= 0)
+        throw cRuntimeError("dlDirectThresholdRrepHopNorm must be positive");
+    if (dlDirectThresholdRrepThresholdMin >= dlDirectThresholdRrepThresholdMax)
+        throw cRuntimeError("dlDirectThresholdRrepThresholdMin must be smaller than dlDirectThresholdRrepThresholdMax");
+    if (dlDirectThresholdRrepMinThresholdGap < 0)
+        throw cRuntimeError("dlDirectThresholdRrepMinThresholdGap must be non-negative");
+    if (dlDirectThresholdRrepMinThresholdGap > dlDirectThresholdRrepThresholdMax - dlDirectThresholdRrepThresholdMin)
+        throw cRuntimeError("dlDirectThresholdRrepMinThresholdGap must not exceed the threshold range");
+    if (dlDirectThresholdRrepHidden1Size <= 0)
+        throw cRuntimeError("dlDirectThresholdRrepHidden1Size must be positive");
+    if (dlDirectThresholdRrepHidden2Size <= 0)
+        throw cRuntimeError("dlDirectThresholdRrepHidden2Size must be positive");
+    if (dlDirectThresholdRrepHidden3Size <= 0)
+        throw cRuntimeError("dlDirectThresholdRrepHidden3Size must be positive");
+
+    size_t hidden1Size = static_cast<size_t>(dlDirectThresholdRrepHidden1Size);
+    size_t hidden2Size = static_cast<size_t>(dlDirectThresholdRrepHidden2Size);
+    size_t hidden3Size = static_cast<size_t>(dlDirectThresholdRrepHidden3Size);
+    if (dlDirectThresholdRrepHiddenWeights.size() != inputSize * hidden1Size)
+        throw cRuntimeError("dlDirectThresholdRrepHiddenWeights must contain exactly %zu values (%zux%zu)", inputSize * hidden1Size, inputSize, hidden1Size);
+    if (dlDirectThresholdRrepHiddenBiases.size() != hidden1Size)
+        throw cRuntimeError("dlDirectThresholdRrepHiddenBiases must contain exactly %zu values", hidden1Size);
+    if (dlDirectThresholdRrepHidden2Weights.size() != hidden1Size * hidden2Size)
+        throw cRuntimeError("dlDirectThresholdRrepHidden2Weights must contain exactly %zu values (%zux%zu)", hidden1Size * hidden2Size, hidden1Size, hidden2Size);
+    if (dlDirectThresholdRrepHidden2Biases.size() != hidden2Size)
+        throw cRuntimeError("dlDirectThresholdRrepHidden2Biases must contain exactly %zu values", hidden2Size);
+    if (dlDirectThresholdRrepHidden3Weights.size() != hidden2Size * hidden3Size)
+        throw cRuntimeError("dlDirectThresholdRrepHidden3Weights must contain exactly %zu values (%zux%zu)", hidden2Size * hidden3Size, hidden2Size, hidden3Size);
+    if (dlDirectThresholdRrepHidden3Biases.size() != hidden3Size)
+        throw cRuntimeError("dlDirectThresholdRrepHidden3Biases must contain exactly %zu values", hidden3Size);
+    if (dlDirectThresholdRrepOutputWeights.size() != hidden3Size * outputSize)
+        throw cRuntimeError("dlDirectThresholdRrepOutputWeights must contain exactly %zu values (%zux%zu)", hidden3Size * outputSize, hidden3Size, outputSize);
+    if (dlDirectThresholdRrepOutputBiases.size() != outputSize)
+        throw cRuntimeError("dlDirectThresholdRrepOutputBias must contain exactly %zu values", outputSize);
 }
 
 void Aodv::loadDlBucketBasedRrepParameters()
@@ -647,8 +1023,9 @@ void Aodv::loadDlBucketBasedRrepParameters()
     dlBucketBasedRrepEntriesByKey.clear();
     dlBucketBasedRrepEntries.clear();
 
-    if (dlBasedRrepEnabled && dlBucketBasedRrepEnabled)
-        throw cRuntimeError("dlBasedRrepEnabled and dlBucketBasedRrepEnabled cannot be enabled at the same time");
+    int enabledPredictors = (dlBasedRrepEnabled ? 1 : 0) + (dlDirectThresholdRrepEnabled ? 1 : 0) + (dlBucketBasedRrepEnabled ? 1 : 0) + (treeBasedRrepEnabled ? 1 : 0);
+    if (enabledPredictors > 1)
+        throw cRuntimeError("Only one of dlBasedRrepEnabled, dlDirectThresholdRrepEnabled, dlBucketBasedRrepEnabled, or treeBasedRrepEnabled may be enabled at a time");
 
     if (!dlBucketBasedRrepEnabled)
         return;
@@ -714,19 +1091,118 @@ void Aodv::loadDlBucketBasedRrepParameters()
         throw cRuntimeError("No valid entries were loaded from dlBucketBasedRrepLookupTable");
 }
 
+void Aodv::loadStateLookupBasedRrepParameters()
+{
+    stateLookupBasedRrepEntriesByKey.clear();
+    stateLookupBasedRrepEntries.clear();
+
+    int enabledPredictors = (dlBasedRrepEnabled ? 1 : 0) + (dlDirectThresholdRrepEnabled ? 1 : 0) + (dlBucketBasedRrepEnabled ? 1 : 0) + (stateLookupBasedRrepEnabled ? 1 : 0) + (treeBasedRrepEnabled ? 1 : 0);
+    if (enabledPredictors > 1)
+        throw cRuntimeError("Only one of dlBasedRrepEnabled, dlDirectThresholdRrepEnabled, dlBucketBasedRrepEnabled, stateLookupBasedRrepEnabled, or treeBasedRrepEnabled may be enabled at a time");
+
+    if (!stateLookupBasedRrepEnabled)
+        return;
+
+    if (stateLookupBasedRrepCbrBinSize <= 0)
+        throw cRuntimeError("stateLookupBasedRrepCbrBinSize must be positive");
+    if (stateLookupBasedRrepNeighborBinSize <= 0)
+        throw cRuntimeError("stateLookupBasedRrepNeighborBinSize must be positive");
+    if (stateLookupBasedRrepHopMax <= 0)
+        throw cRuntimeError("stateLookupBasedRrepHopMax must be positive");
+    if (stateLookupBasedRrepPolicyCsvPath.empty())
+        throw cRuntimeError("stateLookupBasedRrepPolicyCsvPath must not be empty when stateLookupBasedRrepEnabled is true");
+
+    std::ifstream in(stateLookupBasedRrepPolicyCsvPath);
+    if (!in.is_open())
+        throw cRuntimeError("Cannot open stateLookupBasedRrepPolicyCsvPath '%s'", stateLookupBasedRrepPolicyCsvPath.c_str());
+
+    std::string line;
+    bool headerSkipped = false;
+    while (std::getline(in, line)) {
+        if (!headerSkipped) {
+            headerSkipped = true;
+            if (line.size() >= 3 && static_cast<unsigned char>(line[0]) == 0xEF && static_cast<unsigned char>(line[1]) == 0xBB && static_cast<unsigned char>(line[2]) == 0xBF)
+                line = line.substr(3);
+            if (line.find("stateCbrBin") != std::string::npos)
+                continue;
+        }
+
+        std::stringstream rowStream(line);
+        std::string cell;
+        std::vector<std::string> cells;
+        while (std::getline(rowStream, cell, ','))
+            cells.push_back(trimCopy(cell));
+
+        if (cells.size() < 6)
+            continue;
+
+        StateLookupBasedRrepEntry entry;
+        try {
+            entry.stateCbrBin = std::stoi(cells[0]);
+            entry.stateNeighborBin = std::stoi(cells[1]);
+            entry.stateHopBin = std::stoi(cells[2]);
+            entry.stateDirectBin = std::stoi(cells[3]);
+            entry.lowThreshold = std::stod(cells[4]);
+            entry.highThreshold = std::stod(cells[5]);
+        }
+        catch (const std::exception& e) {
+            throw cRuntimeError("Invalid state lookup CSV row '%s': %s", line.c_str(), e.what());
+        }
+
+        if (!(entry.lowThreshold < entry.highThreshold))
+            throw cRuntimeError("Invalid state lookup CSV row '%s': low threshold must be smaller than high threshold", line.c_str());
+
+        entry.key = std::to_string(entry.stateCbrBin) + "|" +
+            std::to_string(entry.stateNeighborBin) + "|" +
+            std::to_string(entry.stateHopBin) + "|" +
+            std::to_string(entry.stateDirectBin);
+        stateLookupBasedRrepEntriesByKey[entry.key] = entry;
+    }
+
+    for (const auto& kv : stateLookupBasedRrepEntriesByKey)
+        stateLookupBasedRrepEntries.push_back(kv.second);
+
+    if (stateLookupBasedRrepEntries.empty())
+        throw cRuntimeError("No valid entries were loaded from stateLookupBasedRrepPolicyCsvPath '%s'", stateLookupBasedRrepPolicyCsvPath.c_str());
+}
+
+void Aodv::loadTreeBasedRrepParameters()
+{
+    int enabledPredictors = (dlBasedRrepEnabled ? 1 : 0) + (dlDirectThresholdRrepEnabled ? 1 : 0) + (dlBucketBasedRrepEnabled ? 1 : 0) + (stateLookupBasedRrepEnabled ? 1 : 0) + (treeBasedRrepEnabled ? 1 : 0);
+    if (enabledPredictors > 1)
+        throw cRuntimeError("Only one of dlBasedRrepEnabled, dlDirectThresholdRrepEnabled, dlBucketBasedRrepEnabled, stateLookupBasedRrepEnabled, or treeBasedRrepEnabled may be enabled at a time");
+
+    if (!treeBasedRrepEnabled)
+        return;
+
+    if (treeBasedRrepFeatureSet != "basic4" && treeBasedRrepFeatureSet != "local6" && treeBasedRrepFeatureSet != "local10")
+        throw cRuntimeError("treeBasedRrepFeatureSet must be one of 'basic4', 'local6', or 'local10'");
+    if (treeBasedRrepNeighborNorm <= 0)
+        throw cRuntimeError("treeBasedRrepNeighborNorm must be positive");
+    if (treeBasedRrepHopNorm <= 0)
+        throw cRuntimeError("treeBasedRrepHopNorm must be positive");
+    if (treeBasedRrepThresholdMin >= treeBasedRrepThresholdMax)
+        throw cRuntimeError("treeBasedRrepThresholdMin must be smaller than treeBasedRrepThresholdMax");
+    if (treeBasedRrepMinThresholdGap < 0)
+        throw cRuntimeError("treeBasedRrepMinThresholdGap must be non-negative");
+    if (treeBasedRrepMinThresholdGap > treeBasedRrepThresholdMax - treeBasedRrepThresholdMin)
+        throw cRuntimeError("treeBasedRrepMinThresholdGap must not exceed the threshold range");
+    if (treeBasedRrepLowModel.empty() || treeBasedRrepHighModel.empty())
+        throw cRuntimeError("treeBasedRrepLowModel and treeBasedRrepHighModel must not be empty when treeBasedRrepEnabled is true");
+
+    size_t inputSize = getRrepFeatureInputSize(treeBasedRrepFeatureSet);
+    treeBasedRrepLowEnsemble = parseTreeBasedRrepEnsemble(treeBasedRrepLowModel, inputSize, "treeBasedRrepLowModel");
+    treeBasedRrepHighEnsemble = parseTreeBasedRrepEnsemble(treeBasedRrepHighModel, inputSize, "treeBasedRrepHighModel");
+}
+
 std::pair<double, double> Aodv::inferDlBasedRrepThresholdRange(double localCbr, int neighborCount, unsigned int hopCount, bool isDirectRouteToDestination) const
 {
-    constexpr size_t inputSize = 4;
     constexpr size_t outputSize = 2;
+    size_t inputSize = getDlBasedRrepInputSize();
     size_t hidden1Size = dlBasedRrepCustomArchitectureEnabled ? static_cast<size_t>(dlBasedRrepHidden1Size) : 32;
     size_t hidden2Size = dlBasedRrepCustomArchitectureEnabled ? static_cast<size_t>(dlBasedRrepHidden2Size) : 16;
-
-    std::array<double, 4> inputs = {
-        clamp01(localCbr / 100.0),
-        clamp01(static_cast<double>(neighborCount) / dlBasedRrepNeighborNorm),
-        clamp01(static_cast<double>(hopCount) / dlBasedRrepHopNorm),
-        isDirectRouteToDestination ? 1.0 : 0.0
-    };
+    size_t hidden3Size = dlBasedRrepCustomArchitectureEnabled ? static_cast<size_t>(dlBasedRrepHidden3Size) : 128;
+    std::vector<double> inputs = buildDlBasedRrepInputs(localCbr, neighborCount, hopCount, isDirectRouteToDestination);
 
     std::vector<double> hidden1(hidden1Size, 0.0);
     for (size_t neuron = 0; neuron < hidden1.size(); ++neuron) {
@@ -744,12 +1220,48 @@ std::pair<double, double> Aodv::inferDlBasedRrepThresholdRange(double localCbr, 
         hidden2[neuron] = relu(sum);
     }
 
+    const std::vector<double> *outputInputs = &hidden2;
+    size_t outputInputSize = hidden2Size;
+    std::vector<double> hidden3;
+    if (dlBasedRrepDirectThresholdOutputEnabled) {
+        hidden3.assign(hidden3Size, 0.0);
+        for (size_t neuron = 0; neuron < hidden3.size(); ++neuron) {
+            double sum = dlBasedRrepHidden3Biases[neuron];
+            for (size_t feature = 0; feature < hidden2Size; ++feature)
+                sum += dlBasedRrepHidden3Weights[neuron * hidden2Size + feature] * hidden2[feature];
+            hidden3[neuron] = relu(sum);
+        }
+        outputInputs = &hidden3;
+        outputInputSize = hidden3Size;
+    }
+
     std::array<double, outputSize> outputs = {};
     for (size_t outputIndex = 0; outputIndex < outputs.size(); ++outputIndex) {
         double sum = dlBasedRrepOutputBiases[outputIndex];
-        for (size_t neuron = 0; neuron < hidden2Size; ++neuron)
-            sum += dlBasedRrepOutputWeights[outputIndex * hidden2Size + neuron] * hidden2[neuron];
+        for (size_t neuron = 0; neuron < outputInputSize; ++neuron)
+            sum += dlBasedRrepOutputWeights[outputIndex * outputInputSize + neuron] * (*outputInputs)[neuron];
         outputs[outputIndex] = sum;
+    }
+
+    if (dlBasedRrepDirectThresholdOutputEnabled) {
+        double predictedLow = std::max(dlBasedRrepThresholdMin, std::min(dlBasedRrepThresholdMax, outputs[0]));
+        double predictedHigh = std::max(dlBasedRrepThresholdMin, std::min(dlBasedRrepThresholdMax, outputs[1]));
+        double minGap = std::min(dlBasedRrepMinThresholdGap, dlBasedRrepThresholdMax - dlBasedRrepThresholdMin);
+        if (predictedHigh - predictedLow < minGap) {
+            double center = (predictedLow + predictedHigh) / 2.0;
+            double halfGap = minGap / 2.0;
+            predictedLow = center - halfGap;
+            predictedHigh = center + halfGap;
+            if (predictedLow < dlBasedRrepThresholdMin) {
+                predictedLow = dlBasedRrepThresholdMin;
+                predictedHigh = dlBasedRrepThresholdMin + minGap;
+            }
+            if (predictedHigh > dlBasedRrepThresholdMax) {
+                predictedHigh = dlBasedRrepThresholdMax;
+                predictedLow = dlBasedRrepThresholdMax - minGap;
+            }
+        }
+        return {predictedLow, predictedHigh};
     }
 
     double valueRange = dlBasedRrepThresholdMax - dlBasedRrepThresholdMin;
@@ -767,6 +1279,72 @@ std::pair<double, double> Aodv::inferDlBasedRrepThresholdRange(double localCbr, 
 
     double predictedLow = predictedCenter - predictedGap / 2.0;
     double predictedHigh = predictedCenter + predictedGap / 2.0;
+
+    return {predictedLow, predictedHigh};
+}
+
+std::pair<double, double> Aodv::inferDlDirectThresholdRrepThresholdRange(double localCbr, int neighborCount, unsigned int hopCount, bool isDirectRouteToDestination, std::vector<double> *debugInputs, std::array<double, 2> *debugRawOutputs) const
+{
+    constexpr size_t outputSize = 2;
+    size_t inputSize = getRrepFeatureInputSize(dlDirectThresholdRrepFeatureSet);
+    size_t hidden1Size = static_cast<size_t>(dlDirectThresholdRrepHidden1Size);
+    size_t hidden2Size = static_cast<size_t>(dlDirectThresholdRrepHidden2Size);
+    size_t hidden3Size = static_cast<size_t>(dlDirectThresholdRrepHidden3Size);
+    std::vector<double> inputs = buildRrepFeatureInputs(dlDirectThresholdRrepFeatureSet, dlDirectThresholdRrepNeighborNorm, dlDirectThresholdRrepHopNorm, localCbr, neighborCount, hopCount, isDirectRouteToDestination);
+    if (debugInputs != nullptr)
+        *debugInputs = inputs;
+
+    std::vector<double> hidden1(hidden1Size, 0.0);
+    for (size_t neuron = 0; neuron < hidden1.size(); ++neuron) {
+        double sum = dlDirectThresholdRrepHiddenBiases[neuron];
+        for (size_t feature = 0; feature < inputSize; ++feature)
+            sum += dlDirectThresholdRrepHiddenWeights[neuron * inputSize + feature] * inputs[feature];
+        hidden1[neuron] = relu(sum);
+    }
+
+    std::vector<double> hidden2(hidden2Size, 0.0);
+    for (size_t neuron = 0; neuron < hidden2.size(); ++neuron) {
+        double sum = dlDirectThresholdRrepHidden2Biases[neuron];
+        for (size_t feature = 0; feature < hidden1Size; ++feature)
+            sum += dlDirectThresholdRrepHidden2Weights[neuron * hidden1Size + feature] * hidden1[feature];
+        hidden2[neuron] = relu(sum);
+    }
+
+    std::vector<double> hidden3(hidden3Size, 0.0);
+    for (size_t neuron = 0; neuron < hidden3.size(); ++neuron) {
+        double sum = dlDirectThresholdRrepHidden3Biases[neuron];
+        for (size_t feature = 0; feature < hidden2Size; ++feature)
+            sum += dlDirectThresholdRrepHidden3Weights[neuron * hidden2Size + feature] * hidden2[feature];
+        hidden3[neuron] = relu(sum);
+    }
+
+    std::array<double, outputSize> outputs = {};
+    for (size_t outputIndex = 0; outputIndex < outputs.size(); ++outputIndex) {
+        double sum = dlDirectThresholdRrepOutputBiases[outputIndex];
+        for (size_t neuron = 0; neuron < hidden3Size; ++neuron)
+            sum += dlDirectThresholdRrepOutputWeights[outputIndex * hidden3Size + neuron] * hidden3[neuron];
+        outputs[outputIndex] = sum;
+    }
+    if (debugRawOutputs != nullptr)
+        *debugRawOutputs = outputs;
+
+    double predictedLow = std::max(dlDirectThresholdRrepThresholdMin, std::min(dlDirectThresholdRrepThresholdMax, outputs[0]));
+    double predictedHigh = std::max(dlDirectThresholdRrepThresholdMin, std::min(dlDirectThresholdRrepThresholdMax, outputs[1]));
+    double minGap = std::min(dlDirectThresholdRrepMinThresholdGap, dlDirectThresholdRrepThresholdMax - dlDirectThresholdRrepThresholdMin);
+    if (predictedHigh - predictedLow < minGap) {
+        double center = (predictedLow + predictedHigh) / 2.0;
+        double halfGap = minGap / 2.0;
+        predictedLow = center - halfGap;
+        predictedHigh = center + halfGap;
+        if (predictedLow < dlDirectThresholdRrepThresholdMin) {
+            predictedLow = dlDirectThresholdRrepThresholdMin;
+            predictedHigh = dlDirectThresholdRrepThresholdMin + minGap;
+        }
+        if (predictedHigh > dlDirectThresholdRrepThresholdMax) {
+            predictedHigh = dlDirectThresholdRrepThresholdMax;
+            predictedLow = dlDirectThresholdRrepThresholdMax - minGap;
+        }
+    }
 
     return {predictedLow, predictedHigh};
 }
@@ -816,6 +1394,87 @@ std::pair<double, double> Aodv::inferDlBucketBasedRrepThresholdRange(double loca
         throw cRuntimeError("Failed to resolve nearest bucket prediction for key '%s'", stateKey.c_str());
 
     return {bestEntry->lowThreshold, bestEntry->highThreshold};
+}
+
+std::string Aodv::buildStateLookupBasedRrepStateKey(double localCbr, int neighborCount, unsigned int hopCount, bool isDirectRouteToDestination) const
+{
+    int stateCbrBin = static_cast<int>(std::floor(std::max(0.0, localCbr) / stateLookupBasedRrepCbrBinSize)) * stateLookupBasedRrepCbrBinSize;
+    stateCbrBin = std::max(0, std::min(100, stateCbrBin));
+    int stateNeighborBin = static_cast<int>(std::floor(std::max(0, neighborCount) / static_cast<double>(stateLookupBasedRrepNeighborBinSize))) * stateLookupBasedRrepNeighborBinSize;
+    stateNeighborBin = std::max(0, std::min(100, stateNeighborBin));
+    int stateHopBin = static_cast<int>(std::lround(static_cast<double>(hopCount)));
+    stateHopBin = std::max(0, std::min(stateLookupBasedRrepHopMax, stateHopBin));
+    int stateDirectBin = isDirectRouteToDestination ? 1 : 0;
+    return std::to_string(stateCbrBin) + "|" +
+        std::to_string(stateNeighborBin) + "|" +
+        std::to_string(stateHopBin) + "|" +
+        std::to_string(stateDirectBin);
+}
+
+std::pair<double, double> Aodv::inferStateLookupBasedRrepThresholdRange(double localCbr, int neighborCount, unsigned int hopCount, bool isDirectRouteToDestination) const
+{
+    std::string stateKey = buildStateLookupBasedRrepStateKey(localCbr, neighborCount, hopCount, isDirectRouteToDestination);
+    auto exactIt = stateLookupBasedRrepEntriesByKey.find(stateKey);
+    if (exactIt != stateLookupBasedRrepEntriesByKey.end())
+        return {exactIt->second.lowThreshold, exactIt->second.highThreshold};
+
+    if (!stateLookupBasedRrepNearestFallbackEnabled || stateLookupBasedRrepEntries.empty())
+        throw cRuntimeError("No state lookup prediction found for key '%s' and nearest fallback is disabled", stateKey.c_str());
+
+    int targetCbrBin = static_cast<int>(std::floor(std::max(0.0, localCbr) / stateLookupBasedRrepCbrBinSize)) * stateLookupBasedRrepCbrBinSize;
+    targetCbrBin = std::max(0, std::min(100, targetCbrBin));
+    int targetNeighborBin = static_cast<int>(std::floor(std::max(0, neighborCount) / static_cast<double>(stateLookupBasedRrepNeighborBinSize))) * stateLookupBasedRrepNeighborBinSize;
+    targetNeighborBin = std::max(0, std::min(100, targetNeighborBin));
+    int targetHopBin = static_cast<int>(std::lround(static_cast<double>(hopCount)));
+    targetHopBin = std::max(0, std::min(stateLookupBasedRrepHopMax, targetHopBin));
+    int targetDirectBin = isDirectRouteToDestination ? 1 : 0;
+
+    const StateLookupBasedRrepEntry *bestEntry = nullptr;
+    double bestDistance = std::numeric_limits<double>::infinity();
+    for (const auto& entry : stateLookupBasedRrepEntries) {
+        double distance =
+            std::abs(entry.stateCbrBin - targetCbrBin) / static_cast<double>(stateLookupBasedRrepCbrBinSize) +
+            std::abs(entry.stateNeighborBin - targetNeighborBin) / static_cast<double>(stateLookupBasedRrepNeighborBinSize) +
+            std::abs(entry.stateHopBin - targetHopBin) +
+            2.0 * std::abs(entry.stateDirectBin - targetDirectBin);
+        if (distance < bestDistance) {
+            bestDistance = distance;
+            bestEntry = &entry;
+        }
+    }
+
+    if (bestEntry == nullptr)
+        throw cRuntimeError("Failed to resolve nearest state lookup prediction for key '%s'", stateKey.c_str());
+
+    return {bestEntry->lowThreshold, bestEntry->highThreshold};
+}
+
+std::pair<double, double> Aodv::inferTreeBasedRrepThresholdRange(double localCbr, int neighborCount, unsigned int hopCount, bool isDirectRouteToDestination) const
+{
+    std::vector<double> inputs = buildRrepFeatureInputs(treeBasedRrepFeatureSet, treeBasedRrepNeighborNorm, treeBasedRrepHopNorm, localCbr, neighborCount, hopCount, isDirectRouteToDestination);
+    double predictedLow = evaluateTreeBasedRrepEnsemble(treeBasedRrepLowEnsemble, inputs, "treeBasedRrepLowModel");
+    double predictedHigh = evaluateTreeBasedRrepEnsemble(treeBasedRrepHighEnsemble, inputs, "treeBasedRrepHighModel");
+
+    predictedLow = std::max(treeBasedRrepThresholdMin, std::min(treeBasedRrepThresholdMax, predictedLow));
+    predictedHigh = std::max(treeBasedRrepThresholdMin, std::min(treeBasedRrepThresholdMax, predictedHigh));
+
+    double minGap = std::min(treeBasedRrepMinThresholdGap, treeBasedRrepThresholdMax - treeBasedRrepThresholdMin);
+    if (predictedHigh - predictedLow < minGap) {
+        double center = (predictedLow + predictedHigh) / 2.0;
+        double halfGap = minGap / 2.0;
+        predictedLow = center - halfGap;
+        predictedHigh = center + halfGap;
+        if (predictedLow < treeBasedRrepThresholdMin) {
+            predictedLow = treeBasedRrepThresholdMin;
+            predictedHigh = treeBasedRrepThresholdMin + minGap;
+        }
+        if (predictedHigh > treeBasedRrepThresholdMax) {
+            predictedHigh = treeBasedRrepThresholdMax;
+            predictedLow = treeBasedRrepThresholdMax - minGap;
+        }
+    }
+
+    return {predictedLow, predictedHigh};
 }
 
 const Ptr<Rreq> Aodv::createRREQ(const L3Address& destAddr)
@@ -1414,6 +2073,7 @@ void Aodv::logCbrRrepMetrics1s()
     int nodeIndex = nodeModule != nullptr ? nodeModule->getIndex() : -1;
     double localCbr = getLocalCbr();
     int neighborCount = countCurrentNeighbors();
+    auto activeRange = getActiveCbrThresholdRange();
     double blockRate = metricsRrepCandidateCount > 0 ? (double)metricsRrepBlockedCount / metricsRrepCandidateCount : 0.0;
     double discoveryDelayAvgMs = metricsRouteDiscoveryDelayCount > 0 ? 1000.0 * metricsRouteDiscoveryDelaySum.dbl() / metricsRouteDiscoveryDelayCount : 0.0;
     double routeCandidateAvg = metricsRouteCandidateCountCount > 0 ? (double)metricsRouteCandidateCountSum / metricsRouteCandidateCountCount : 0.0;
@@ -1427,7 +2087,7 @@ void Aodv::logCbrRrepMetrics1s()
         return;
 
     if (writeHeader) {
-        out << "time,node,nodeIndex,externalId,localCbr,neighborCount,"
+        out << "time,node,nodeIndex,externalId,localCbr,neighborCount,appliedLowThreshold,appliedHighThreshold,"
                "rreqReceived,rrepCandidates,rrepAllowed,rrepBlocked,rrepBlockRate,"
                "routeDiscoveryStarted,routeDiscoverySucceeded,routeDiscoveryFailed,"
                "routeDiscoveryDelayAvgMs,rrepReceived,routeCandidateAvg,"
@@ -1440,6 +2100,8 @@ void Aodv::logCbrRrepMetrics1s()
         << externalId << ","
         << localCbr << ","
         << neighborCount << ","
+        << activeRange.first << ","
+        << activeRange.second << ","
         << metricsRreqReceivedCount << ","
         << metricsRrepCandidateCount << ","
         << metricsRrepAllowedCount << ","
@@ -1485,11 +2147,12 @@ void Aodv::logTransmissionFailureDiagnosis1s()
 
     double localCbr = getLocalCbr();
     int neighborCount = countCurrentNeighbors();
+    auto activeRange = getActiveCbrThresholdRange();
     double routeDiscoveryDelayAvgMs = metricsRouteDiscoveryDelayCount > 0 ? 1000.0 * metricsRouteDiscoveryDelaySum.dbl() / metricsRouteDiscoveryDelayCount : 0.0;
     double rrepBlockRate = metricsRrepCandidateCount > 0 ? (double)metricsRrepBlockedCount / metricsRrepCandidateCount : 0.0;
 
     if (writeHeader) {
-        out << "time,node,localCbr,neighborCount,"
+        out << "time,node,localCbr,neighborCount,appliedLowThreshold,appliedHighThreshold,"
                "routeDiscoveryStarted,routeDiscoverySucceeded,routeDiscoveryFailed,routeDiscoveryDelayAvgMs,"
                "rreqReceived,rrepReceived,rrepCandidates,rrepAllowed,rrepBlocked,rrepBlockRate,"
                "noRouteToForward,noActiveRouteToForward,"
@@ -1500,6 +2163,8 @@ void Aodv::logTransmissionFailureDiagnosis1s()
         << getParentModule()->getFullName() << ","
         << localCbr << ","
         << neighborCount << ","
+        << activeRange.first << ","
+        << activeRange.second << ","
         << metricsRouteDiscoveryStartedCount << ","
         << metricsRouteDiscoverySucceededCount << ","
         << metricsRouteDiscoveryFailedCount << ","
@@ -1539,10 +2204,10 @@ void Aodv::ensureCbrRrepDecisionLogFile() const
     std::ofstream out(filePath, std::ios::app);
     if (!out.is_open())
         return;
-    out << "time,node,source,originator,destination,rreqId,hopCount,localCbr,threshold,decision\n";
+    out << "time,node,source,originator,destination,rreqId,hopCount,localCbr,threshold,appliedLowThreshold,appliedHighThreshold,decision\n";
 }
 
-void Aodv::logCbrRrepDecision(const Ptr<Rreq>& rreq, const L3Address& sourceAddr, double localCbr, const char *decision) const
+void Aodv::logCbrRrepDecision(const Ptr<Rreq>& rreq, const L3Address& sourceAddr, double localCbr, const char *decision, double appliedLowThreshold, double appliedHighThreshold) const
 {
     if (!cbrRrepDecisionLogEnabled || pwd.empty())
         return;
@@ -1562,6 +2227,58 @@ void Aodv::logCbrRrepDecision(const Ptr<Rreq>& rreq, const L3Address& sourceAddr
         << rreq->getHopCount() << ","
         << localCbr << ","
         << cbrBasedRrepThreshold << ","
+        << appliedLowThreshold << ","
+        << appliedHighThreshold << ","
+        << decision << "\n";
+}
+
+void Aodv::ensureDlDirectThresholdRrepDebugLogFile() const
+{
+    if (!dlDirectThresholdRrepDebugLogEnabled || pwd.empty())
+        return;
+
+    std::filesystem::create_directories(pwd);
+    std::string filePath = pwd + "/aodv_dl_direct_threshold_debug.csv";
+    bool writeHeader = !std::filesystem::exists(filePath) || std::filesystem::file_size(filePath) == 0;
+    if (!writeHeader)
+        return;
+
+    std::ofstream out(filePath, std::ios::app);
+    if (!out.is_open())
+        return;
+
+    out << "time,node,source,originator,destination,rreqId,hopCount,localCbr,neighborCount,isDirectRoute,input0,input1,input2,input3,rawLow,rawHigh,predictedLow,predictedHigh,decision\n";
+}
+
+void Aodv::logDlDirectThresholdRrepDebug(const Ptr<Rreq>& rreq, const L3Address& sourceAddr, double localCbr, int neighborCount, unsigned int hopCount, bool isDirectRouteToDestination, const std::vector<double>& inputs, const std::array<double, 2>& rawOutputs, double predictedLow, double predictedHigh, const char *decision) const
+{
+    if (!dlDirectThresholdRrepDebugLogEnabled || pwd.empty())
+        return;
+
+    ensureDlDirectThresholdRrepDebugLogFile();
+    std::string filePath = pwd + "/aodv_dl_direct_threshold_debug.csv";
+    std::ofstream out(filePath, std::ios::app);
+    if (!out.is_open())
+        return;
+
+    out << simTime() << ","
+        << getParentModule()->getFullName() << ","
+        << sourceAddr << ","
+        << rreq->getOriginatorAddr() << ","
+        << rreq->getDestAddr() << ","
+        << rreq->getRreqId() << ","
+        << hopCount << ","
+        << localCbr << ","
+        << neighborCount << ","
+        << (isDirectRouteToDestination ? 1 : 0) << ","
+        << (inputs.size() > 0 ? inputs[0] : 0.0) << ","
+        << (inputs.size() > 1 ? inputs[1] : 0.0) << ","
+        << (inputs.size() > 2 ? inputs[2] : 0.0) << ","
+        << (inputs.size() > 3 ? inputs[3] : 0.0) << ","
+        << rawOutputs[0] << ","
+        << rawOutputs[1] << ","
+        << predictedLow << ","
+        << predictedHigh << ","
         << decision << "\n";
 }
 
@@ -1611,7 +2328,8 @@ void Aodv::handleRREQ(const Ptr<Rreq>& rreq, const L3Address& sourceAddr, unsign
     // A node ignores all RREQs received from any node in its blacklist set.
 
     if (containsKey(blacklist, sourceAddr)) {
-        logCbrRrepDecision(rreq, sourceAddr, getLocalCbr(), "blacklist_drop");
+        auto activeRange = getActiveCbrThresholdRange();
+        logCbrRrepDecision(rreq, sourceAddr, getLocalCbr(), "blacklist_drop", activeRange.first, activeRange.second);
         EV_INFO << "The sender node " << sourceAddr << " is in our blacklist. Ignoring the Route Request" << endl;
         return;
     }
@@ -1643,7 +2361,8 @@ void Aodv::handleRREQ(const Ptr<Rreq>& rreq, const L3Address& sourceAddr, unsign
                 ", originator=" + rreq->getOriginatorAddr().str() +
                 ", target=" + rreq->getDestAddr().str() +
                 ", rreqId=" + std::to_string(rreq->getRreqId()));*/
-        logCbrRrepDecision(rreq, sourceAddr, getLocalCbr(), "duplicate_drop");
+        auto activeRange = getActiveCbrThresholdRange();
+        logCbrRrepDecision(rreq, sourceAddr, getLocalCbr(), "duplicate_drop", activeRange.first, activeRange.second);
         EV_WARN << "The same packet has arrived within PATH_DISCOVERY_TIME= " << pathDiscoveryTime << ". Discarding it" << endl;
         return;
     }
@@ -1753,7 +2472,8 @@ void Aodv::handleRREQ(const Ptr<Rreq>& rreq, const L3Address& sourceAddr, unsign
 
     // check (i)
     if (rreq->getDestAddr() == getSelfIPAddress()) {
-        logCbrRrepDecision(rreq, sourceAddr, getLocalCbr(), "destination_reply");
+        auto activeRange = getActiveCbrThresholdRange();
+        logCbrRrepDecision(rreq, sourceAddr, getLocalCbr(), "destination_reply", activeRange.first, activeRange.second);
         EV_INFO << "I am the destination node for which the route was requested" << endl;
 
         // create RREP
@@ -1772,7 +2492,8 @@ void Aodv::handleRREQ(const Ptr<Rreq>& rreq, const L3Address& sourceAddr, unsign
         EV_INFO << "I am an intermediate node who has information about a route to " << rreq->getDestAddr() << endl;
 
         if (destRoute->getNextHopAsGeneric() == sourceAddr) {
-            logCbrRrepDecision(rreq, sourceAddr, getLocalCbr(), "loop_drop");
+            auto activeRange = getActiveCbrThresholdRange();
+            logCbrRrepDecision(rreq, sourceAddr, getLocalCbr(), "loop_drop", activeRange.first, activeRange.second);
             EV_WARN << "This RREP would make a loop. Dropping it" << endl;
             return;
         }
@@ -1785,14 +2506,16 @@ void Aodv::handleRREQ(const Ptr<Rreq>& rreq, const L3Address& sourceAddr, unsign
             int currentNeighborCount = countCurrentNeighbors();
             unsigned int currentRreqHopCount = rreq->getHopCount();
             bool isDirectRouteToDestination = destRoute->getMetric() <= 1 || destRoute->getNextHopAsGeneric() == rreq->getDestAddr();
-            bool blockedByCbrRange = isOutsideConfiguredCbrRange(localCbr);
+            double activeLowThreshold = cbrBasedRrepLowThreshold;
+            double activeHighThreshold = cbrBasedRrepHighThresholdForRange;
+            bool blockedByCbrRange = isOutsideConfiguredCbrRange(localCbr, activeLowThreshold, activeHighThreshold);
             if (blockedByCbrRange && !(cbrBasedRrepDirectRouteBypassEnabled && isDirectRouteToDestination)) {
                 if (cbrRrepMetricsEnabled)
                     metricsRrepBlockedCount++;
-                logCbrRrepDecision(rreq, sourceAddr, localCbr, "range_blocked");
+                logCbrRrepDecision(rreq, sourceAddr, localCbr, "range_blocked", activeLowThreshold, activeHighThreshold);
                 EV_INFO << "Skipping intermediate RREP because local CBR " << localCbr
-                        << " is outside allowed range (" << cbrBasedRrepLowThreshold
-                        << ", " << cbrBasedRrepHighThresholdForRange << ")" << endl;
+                        << " is outside allowed range (" << activeLowThreshold
+                        << ", " << activeHighThreshold << ")" << endl;
                 return;
             }
             if (dlBucketBasedRrepEnabled) {
@@ -1801,13 +2524,59 @@ void Aodv::handleRREQ(const Ptr<Rreq>& rreq, const L3Address& sourceAddr, unsign
                 if (blockedByDlBucketMode && !(cbrBasedRrepDirectRouteBypassEnabled && isDirectRouteToDestination)) {
                     if (cbrRrepMetricsEnabled)
                         metricsRrepBlockedCount++;
-                    logCbrRrepDecision(rreq, sourceAddr, localCbr, "dl_bucket_blocked");
+                    logCbrRrepDecision(rreq, sourceAddr, localCbr, "dl_bucket_blocked", predictedRange.first, predictedRange.second);
                     EV_INFO << "Skipping intermediate RREP because local CBR " << localCbr
                             << " is outside bucket-predicted range (" << predictedRange.first
                             << ", " << predictedRange.second << ")" << endl;
                     return;
                 }
-                logCbrRrepDecision(rreq, sourceAddr, localCbr, cbrBasedRrepDirectRouteBypassEnabled && isDirectRouteToDestination && (blockedByCbrRange || blockedByDlBucketMode) ? "dl_bucket_direct_bypass_allow" : "dl_bucket_allowed");
+                logCbrRrepDecision(rreq, sourceAddr, localCbr, cbrBasedRrepDirectRouteBypassEnabled && isDirectRouteToDestination && (blockedByCbrRange || blockedByDlBucketMode) ? "dl_bucket_direct_bypass_allow" : "dl_bucket_allowed", predictedRange.first, predictedRange.second);
+            }
+            else if (stateLookupBasedRrepEnabled) {
+                auto predictedRange = inferStateLookupBasedRrepThresholdRange(localCbr, currentNeighborCount, currentRreqHopCount, isDirectRouteToDestination);
+                bool blockedByStateLookupMode = !(predictedRange.first < localCbr && localCbr < predictedRange.second);
+                if (blockedByStateLookupMode && !(cbrBasedRrepDirectRouteBypassEnabled && isDirectRouteToDestination)) {
+                    if (cbrRrepMetricsEnabled)
+                        metricsRrepBlockedCount++;
+                    logCbrRrepDecision(rreq, sourceAddr, localCbr, "state_lookup_blocked", predictedRange.first, predictedRange.second);
+                    EV_INFO << "Skipping intermediate RREP because local CBR " << localCbr
+                            << " is outside state-lookup-predicted range (" << predictedRange.first
+                            << ", " << predictedRange.second << ")" << endl;
+                    return;
+                }
+                logCbrRrepDecision(rreq, sourceAddr, localCbr, cbrBasedRrepDirectRouteBypassEnabled && isDirectRouteToDestination && (blockedByCbrRange || blockedByStateLookupMode) ? "state_lookup_direct_bypass_allow" : "state_lookup_allowed", predictedRange.first, predictedRange.second);
+            }
+            else if (treeBasedRrepEnabled) {
+                auto predictedRange = inferTreeBasedRrepThresholdRange(localCbr, currentNeighborCount, currentRreqHopCount, isDirectRouteToDestination);
+                bool blockedByTreeMode = !(predictedRange.first < localCbr && localCbr < predictedRange.second);
+                if (blockedByTreeMode && !(cbrBasedRrepDirectRouteBypassEnabled && isDirectRouteToDestination)) {
+                    if (cbrRrepMetricsEnabled)
+                        metricsRrepBlockedCount++;
+                    logCbrRrepDecision(rreq, sourceAddr, localCbr, "tree_blocked", predictedRange.first, predictedRange.second);
+                    EV_INFO << "Skipping intermediate RREP because local CBR " << localCbr
+                            << " is outside tree-predicted range (" << predictedRange.first
+                            << ", " << predictedRange.second << ")" << endl;
+                    return;
+                }
+                logCbrRrepDecision(rreq, sourceAddr, localCbr, cbrBasedRrepDirectRouteBypassEnabled && isDirectRouteToDestination && (blockedByCbrRange || blockedByTreeMode) ? "tree_direct_bypass_allow" : "tree_allowed", predictedRange.first, predictedRange.second);
+            }
+            else if (dlDirectThresholdRrepEnabled) {
+                std::vector<double> debugInputs;
+                std::array<double, 2> debugRawOutputs = {};
+                auto predictedRange = inferDlDirectThresholdRrepThresholdRange(localCbr, currentNeighborCount, destRoute->getMetric(), isDirectRouteToDestination, &debugInputs, &debugRawOutputs);
+                bool blockedByDlDirectThresholdMode = !(predictedRange.first < localCbr && localCbr < predictedRange.second);
+                if (blockedByDlDirectThresholdMode && !(cbrBasedRrepDirectRouteBypassEnabled && isDirectRouteToDestination)) {
+                    if (cbrRrepMetricsEnabled)
+                        metricsRrepBlockedCount++;
+                    logDlDirectThresholdRrepDebug(rreq, sourceAddr, localCbr, currentNeighborCount, destRoute->getMetric(), isDirectRouteToDestination, debugInputs, debugRawOutputs, predictedRange.first, predictedRange.second, "dl_direct_threshold_blocked");
+                    logCbrRrepDecision(rreq, sourceAddr, localCbr, "dl_direct_threshold_blocked", predictedRange.first, predictedRange.second);
+                    EV_INFO << "Skipping intermediate RREP because local CBR " << localCbr
+                            << " is outside direct-threshold-DL-predicted range (" << predictedRange.first
+                            << ", " << predictedRange.second << ")" << endl;
+                    return;
+                }
+                logDlDirectThresholdRrepDebug(rreq, sourceAddr, localCbr, currentNeighborCount, destRoute->getMetric(), isDirectRouteToDestination, debugInputs, debugRawOutputs, predictedRange.first, predictedRange.second, cbrBasedRrepDirectRouteBypassEnabled && isDirectRouteToDestination && (blockedByCbrRange || blockedByDlDirectThresholdMode) ? "dl_direct_threshold_direct_bypass_allow" : "dl_direct_threshold_allowed");
+                logCbrRrepDecision(rreq, sourceAddr, localCbr, cbrBasedRrepDirectRouteBypassEnabled && isDirectRouteToDestination && (blockedByCbrRange || blockedByDlDirectThresholdMode) ? "dl_direct_threshold_direct_bypass_allow" : "dl_direct_threshold_allowed", predictedRange.first, predictedRange.second);
             }
             else if (dlBasedRrepEnabled) {
                 auto predictedRange = inferDlBasedRrepThresholdRange(localCbr, currentNeighborCount, destRoute->getMetric(), isDirectRouteToDestination);
@@ -1815,29 +2584,29 @@ void Aodv::handleRREQ(const Ptr<Rreq>& rreq, const L3Address& sourceAddr, unsign
                 if (blockedByDlMode && !(cbrBasedRrepDirectRouteBypassEnabled && isDirectRouteToDestination)) {
                     if (cbrRrepMetricsEnabled)
                         metricsRrepBlockedCount++;
-                    logCbrRrepDecision(rreq, sourceAddr, localCbr, "dl_blocked");
+                    logCbrRrepDecision(rreq, sourceAddr, localCbr, "dl_blocked", predictedRange.first, predictedRange.second);
                     EV_INFO << "Skipping intermediate RREP because local CBR " << localCbr
                             << " is outside DL-predicted range (" << predictedRange.first
                             << ", " << predictedRange.second << ")" << endl;
                     return;
                 }
-                logCbrRrepDecision(rreq, sourceAddr, localCbr, cbrBasedRrepDirectRouteBypassEnabled && isDirectRouteToDestination && (blockedByCbrRange || blockedByDlMode) ? "dl_direct_bypass_allow" : "dl_allowed");
+                logCbrRrepDecision(rreq, sourceAddr, localCbr, cbrBasedRrepDirectRouteBypassEnabled && isDirectRouteToDestination && (blockedByCbrRange || blockedByDlMode) ? "dl_direct_bypass_allow" : "dl_allowed", predictedRange.first, predictedRange.second);
             }
             else if (cbrBasedRrepEnabled) {
                 bool blockedByCbrMode = shouldBlockByMode(localCbr, cbrBasedRrepThreshold, cbrBasedRrepCompareMode);
                 if (blockedByCbrMode && !(cbrBasedRrepDirectRouteBypassEnabled && isDirectRouteToDestination)) {
                     if (cbrRrepMetricsEnabled)
                         metricsRrepBlockedCount++;
-                    logCbrRrepDecision(rreq, sourceAddr, localCbr, "blocked");
+                    logCbrRrepDecision(rreq, sourceAddr, localCbr, "blocked", cbrBasedRrepThreshold, cbrBasedRrepThreshold);
                     EV_INFO << "Skipping intermediate RREP because local CBR " << localCbr
                             << " is " << describeModeRelation(cbrBasedRrepCompareMode)
                             << " threshold " << cbrBasedRrepThreshold << endl;
                     return;
                 }
-                logCbrRrepDecision(rreq, sourceAddr, localCbr, cbrBasedRrepDirectRouteBypassEnabled && isDirectRouteToDestination && (blockedByCbrRange || blockedByCbrMode) ? "direct_bypass_allow" : "allowed");
+                logCbrRrepDecision(rreq, sourceAddr, localCbr, cbrBasedRrepDirectRouteBypassEnabled && isDirectRouteToDestination && (blockedByCbrRange || blockedByCbrMode) ? "direct_bypass_allow" : "allowed", cbrBasedRrepThreshold, cbrBasedRrepThreshold);
             }
             else {
-                logCbrRrepDecision(rreq, sourceAddr, localCbr, "disabled_allow");
+                logCbrRrepDecision(rreq, sourceAddr, localCbr, "disabled_allow", activeLowThreshold, activeHighThreshold);
             }
             if (cbrRrepMetricsEnabled) {
                 metricsRrepAllowedCount++;
@@ -1846,7 +2615,7 @@ void Aodv::handleRREQ(const Ptr<Rreq>& rreq, const L3Address& sourceAddr, unsign
             if (destRoute == nullptr || reverseRoute == nullptr || destRoute->getSource() != this || reverseRoute->getSource() != this) {
                 if (cbrRrepMetricsEnabled)
                     metricsRrepBlockedCount++;
-                logCbrRrepDecision(rreq, sourceAddr, localCbr, "route_missing_before_rrep");
+                logCbrRrepDecision(rreq, sourceAddr, localCbr, "route_missing_before_rrep", activeLowThreshold, activeHighThreshold);
                 EV_WARN << "Skipping intermediate RREP because destination/reverse route is unavailable just before RREP creation. "
                         << "destRoute=" << (destRoute != nullptr)
                         << ", reverseRoute=" << (reverseRoute != nullptr) << endl;
@@ -1878,9 +2647,11 @@ void Aodv::handleRREQ(const Ptr<Rreq>& rreq, const L3Address& sourceAddr, unsign
 
             return; // discard RREQ, in this case, we also do not forward it.
         }
-        else
-            logCbrRrepDecision(rreq, sourceAddr, getLocalCbr(), "dest_only_forward");
+        else {
+            auto activeRange = getActiveCbrThresholdRange();
+            logCbrRrepDecision(rreq, sourceAddr, getLocalCbr(), "dest_only_forward", activeRange.first, activeRange.second);
             EV_INFO << "The originator indicated that only the destination may respond to this RREQ (D flag is set). Forwarding ..." << endl;
+        }
     }
 
     // If a node does not generate a RREP (following the processing rules in
@@ -1907,12 +2678,15 @@ void Aodv::handleRREQ(const Ptr<Rreq>& rreq, const L3Address& sourceAddr, unsign
         auto outgoingRREQ = dynamicPtrCast<Rreq>(rreq->dupShared());
         if (cbrRrepMetricsEnabled)
             metricsRelayParticipationCount++;
-        logCbrRrepDecision(rreq, sourceAddr, getLocalCbr(), "forward_only");
+        auto activeRange = getActiveCbrThresholdRange();
+        logCbrRrepDecision(rreq, sourceAddr, getLocalCbr(), "forward_only", activeRange.first, activeRange.second);
         forwardRREQ(outgoingRREQ, timeToLive);
     }
-    else
-        logCbrRrepDecision(rreq, sourceAddr, getLocalCbr(), "ttl_drop");
+    else {
+        auto activeRange = getActiveCbrThresholdRange();
+        logCbrRrepDecision(rreq, sourceAddr, getLocalCbr(), "ttl_drop", activeRange.first, activeRange.second);
         EV_WARN << "Can't forward the RREQ because of its small (<= 1) TTL: " << timeToLive << " or the AODV reboot has not completed yet" << endl;
+    }
 }
 
 IRoute *Aodv::createRoute(const L3Address& destAddr, const L3Address& nextHop,
@@ -2409,6 +3183,9 @@ void Aodv::clearState()
     metricsRouteDiscoveryDelayCount = 0;
     metricsRouteDiscoveryStartTimes.clear();
     metricsRouteDiscoveryCandidateCounts.clear();
+    cbrBasedRandomThresholdEpoch = -1;
+    cbrBasedRandomActiveLowThreshold = 0;
+    cbrBasedRandomActiveHighThreshold = 0;
     diagnosisNoRouteToForwardCount = 0;
     diagnosisNoActiveRouteToForwardCount = 0;
     diagnosisRouteInvalidateCount = 0;
