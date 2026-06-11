@@ -169,6 +169,8 @@ void Aodv::initialize(int stage)
         dlDirectThresholdRrepThresholdMin = par("dlDirectThresholdRrepThresholdMin");
         dlDirectThresholdRrepThresholdMax = par("dlDirectThresholdRrepThresholdMax");
         dlDirectThresholdRrepMinThresholdGap = par("dlDirectThresholdRrepMinThresholdGap");
+        dlDirectThresholdRrepInputStandardizationEnabled = par("dlDirectThresholdRrepInputStandardizationEnabled");
+        dlDirectThresholdRrepOutputStandardizationEnabled = par("dlDirectThresholdRrepOutputStandardizationEnabled");
         dlDirectThresholdRrepHidden1Size = par("dlDirectThresholdRrepHidden1Size");
         dlDirectThresholdRrepHidden2Size = par("dlDirectThresholdRrepHidden2Size");
         dlDirectThresholdRrepHidden3Size = par("dlDirectThresholdRrepHidden3Size");
@@ -693,11 +695,13 @@ size_t Aodv::getRrepFeatureInputSize(const std::string& featureSet) const
 {
     if (featureSet == "basic4")
         return 4;
+    if (featureSet == "raw4")
+        return 4;
     if (featureSet == "local6")
         return 6;
     if (featureSet == "local10")
         return 10;
-    throw cRuntimeError("featureSet must be one of 'basic4', 'local6', or 'local10'");
+    throw cRuntimeError("featureSet must be one of 'basic4', 'raw4', 'local6', or 'local10'");
 }
 
 std::vector<double> Aodv::buildRrepFeatureInputs(const std::string& featureSet, int neighborNormDiv, int hopNormDiv, double localCbr, int neighborCount, unsigned int hopCount, bool isDirectRouteToDestination) const
@@ -719,6 +723,15 @@ std::vector<double> Aodv::buildRrepFeatureInputs(const std::string& featureSet, 
             localCbrNorm,
             neighborNorm,
             hopNorm,
+            isDirectRouteToDestination ? 1.0 : 0.0
+        };
+    }
+
+    if (featureSet == "raw4") {
+        return {
+            localCbr,
+            static_cast<double>(neighborCount),
+            static_cast<double>(hopCount),
             isDirectRouteToDestination ? 1.0 : 0.0
         };
     }
@@ -974,12 +987,16 @@ void Aodv::loadDlDirectThresholdRrepParameters()
     dlDirectThresholdRrepHidden3Biases = parseDoubleList(par("dlDirectThresholdRrepHidden3Biases").stringValue());
     dlDirectThresholdRrepOutputWeights = parseDoubleList(par("dlDirectThresholdRrepOutputWeights").stringValue());
     dlDirectThresholdRrepOutputBiases = parseDoubleList(par("dlDirectThresholdRrepOutputBias").stringValue());
+    dlDirectThresholdRrepInputMeans = parseDoubleList(par("dlDirectThresholdRrepInputMean").stringValue());
+    dlDirectThresholdRrepInputScales = parseDoubleList(par("dlDirectThresholdRrepInputScale").stringValue());
+    dlDirectThresholdRrepOutputMeans = parseDoubleList(par("dlDirectThresholdRrepOutputMean").stringValue());
+    dlDirectThresholdRrepOutputScales = parseDoubleList(par("dlDirectThresholdRrepOutputScale").stringValue());
 
     if (!dlDirectThresholdRrepEnabled)
         return;
 
-    if (dlDirectThresholdRrepFeatureSet != "basic4" && dlDirectThresholdRrepFeatureSet != "local6" && dlDirectThresholdRrepFeatureSet != "local10")
-        throw cRuntimeError("dlDirectThresholdRrepFeatureSet must be one of 'basic4', 'local6', or 'local10'");
+    if (dlDirectThresholdRrepFeatureSet != "basic4" && dlDirectThresholdRrepFeatureSet != "raw4" && dlDirectThresholdRrepFeatureSet != "local6" && dlDirectThresholdRrepFeatureSet != "local10")
+        throw cRuntimeError("dlDirectThresholdRrepFeatureSet must be one of 'basic4', 'raw4', 'local6', or 'local10'");
     if (dlDirectThresholdRrepNeighborNorm <= 0)
         throw cRuntimeError("dlDirectThresholdRrepNeighborNorm must be positive");
     if (dlDirectThresholdRrepHopNorm <= 0)
@@ -1000,6 +1017,26 @@ void Aodv::loadDlDirectThresholdRrepParameters()
     size_t hidden1Size = static_cast<size_t>(dlDirectThresholdRrepHidden1Size);
     size_t hidden2Size = static_cast<size_t>(dlDirectThresholdRrepHidden2Size);
     size_t hidden3Size = static_cast<size_t>(dlDirectThresholdRrepHidden3Size);
+    if (dlDirectThresholdRrepInputStandardizationEnabled) {
+        if (dlDirectThresholdRrepInputMeans.size() != inputSize)
+            throw cRuntimeError("dlDirectThresholdRrepInputMean must contain exactly %zu values", inputSize);
+        if (dlDirectThresholdRrepInputScales.size() != inputSize)
+            throw cRuntimeError("dlDirectThresholdRrepInputScale must contain exactly %zu values", inputSize);
+        for (size_t i = 0; i < inputSize; ++i) {
+            if (dlDirectThresholdRrepInputScales[i] == 0.0)
+                throw cRuntimeError("dlDirectThresholdRrepInputScale contains zero at index %zu", i);
+        }
+    }
+    if (dlDirectThresholdRrepOutputStandardizationEnabled) {
+        if (dlDirectThresholdRrepOutputMeans.size() != outputSize)
+            throw cRuntimeError("dlDirectThresholdRrepOutputMean must contain exactly %zu values", outputSize);
+        if (dlDirectThresholdRrepOutputScales.size() != outputSize)
+            throw cRuntimeError("dlDirectThresholdRrepOutputScale must contain exactly %zu values", outputSize);
+        for (size_t i = 0; i < outputSize; ++i) {
+            if (dlDirectThresholdRrepOutputScales[i] == 0.0)
+                throw cRuntimeError("dlDirectThresholdRrepOutputScale contains zero at index %zu", i);
+        }
+    }
     if (dlDirectThresholdRrepHiddenWeights.size() != inputSize * hidden1Size)
         throw cRuntimeError("dlDirectThresholdRrepHiddenWeights must contain exactly %zu values (%zux%zu)", inputSize * hidden1Size, inputSize, hidden1Size);
     if (dlDirectThresholdRrepHiddenBiases.size() != hidden1Size)
@@ -1291,6 +1328,10 @@ std::pair<double, double> Aodv::inferDlDirectThresholdRrepThresholdRange(double 
     size_t hidden2Size = static_cast<size_t>(dlDirectThresholdRrepHidden2Size);
     size_t hidden3Size = static_cast<size_t>(dlDirectThresholdRrepHidden3Size);
     std::vector<double> inputs = buildRrepFeatureInputs(dlDirectThresholdRrepFeatureSet, dlDirectThresholdRrepNeighborNorm, dlDirectThresholdRrepHopNorm, localCbr, neighborCount, hopCount, isDirectRouteToDestination);
+    if (dlDirectThresholdRrepInputStandardizationEnabled) {
+        for (size_t i = 0; i < inputs.size(); ++i)
+            inputs[i] = (inputs[i] - dlDirectThresholdRrepInputMeans[i]) / dlDirectThresholdRrepInputScales[i];
+    }
     if (debugInputs != nullptr)
         *debugInputs = inputs;
 
@@ -1324,6 +1365,10 @@ std::pair<double, double> Aodv::inferDlDirectThresholdRrepThresholdRange(double 
         for (size_t neuron = 0; neuron < hidden3Size; ++neuron)
             sum += dlDirectThresholdRrepOutputWeights[outputIndex * hidden3Size + neuron] * hidden3[neuron];
         outputs[outputIndex] = sum;
+    }
+    if (dlDirectThresholdRrepOutputStandardizationEnabled) {
+        for (size_t outputIndex = 0; outputIndex < outputs.size(); ++outputIndex)
+            outputs[outputIndex] = outputs[outputIndex] * dlDirectThresholdRrepOutputScales[outputIndex] + dlDirectThresholdRrepOutputMeans[outputIndex];
     }
     if (debugRawOutputs != nullptr)
         *debugRawOutputs = outputs;

@@ -83,9 +83,15 @@ simple Aodv like IApp
         double dlDirectThresholdRrepThresholdMin = default(0);
         double dlDirectThresholdRrepThresholdMax = default(100);
         double dlDirectThresholdRrepMinThresholdGap = default(5);
+        bool dlDirectThresholdRrepInputStandardizationEnabled = default(false);
+        bool dlDirectThresholdRrepOutputStandardizationEnabled = default(false);
         int dlDirectThresholdRrepHidden1Size = default(256);
         int dlDirectThresholdRrepHidden2Size = default(256);
         int dlDirectThresholdRrepHidden3Size = default(128);
+        string dlDirectThresholdRrepInputMean = default("");
+        string dlDirectThresholdRrepInputScale = default("");
+        string dlDirectThresholdRrepOutputMean = default("");
+        string dlDirectThresholdRrepOutputScale = default("");
         string dlDirectThresholdRrepHiddenWeights = default("0.0");
         string dlDirectThresholdRrepHiddenBiases = default("0.0");
         string dlDirectThresholdRrepHidden2Weights = default("0.0");

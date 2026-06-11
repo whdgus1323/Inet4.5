@@ -146,9 +146,15 @@ class INET_API Aodv : public RoutingProtocolBase, public NetfilterBase::HookBase
     double dlDirectThresholdRrepThresholdMin = 0;
     double dlDirectThresholdRrepThresholdMax = 100;
     double dlDirectThresholdRrepMinThresholdGap = 0;
+    bool dlDirectThresholdRrepInputStandardizationEnabled = false;
+    bool dlDirectThresholdRrepOutputStandardizationEnabled = false;
     int dlDirectThresholdRrepHidden1Size = 256;
     int dlDirectThresholdRrepHidden2Size = 256;
     int dlDirectThresholdRrepHidden3Size = 128;
+    std::vector<double> dlDirectThresholdRrepInputMeans;
+    std::vector<double> dlDirectThresholdRrepInputScales;
+    std::vector<double> dlDirectThresholdRrepOutputMeans;
+    std::vector<double> dlDirectThresholdRrepOutputScales;
     std::vector<double> dlDirectThresholdRrepHiddenWeights;
     std::vector<double> dlDirectThresholdRrepHiddenBiases;
     std::vector<double> dlDirectThresholdRrepHidden2Weights;
