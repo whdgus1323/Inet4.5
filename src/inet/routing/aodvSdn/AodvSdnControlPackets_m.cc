@@ -292,7 +292,7 @@ unsigned int AodvSdnControlPacketDescriptor::getFieldTypeFlags(int field) const
         field -= base->getFieldCount();
     }
     static unsigned int fieldTypeFlags[] = {
-        0,    // FIELD_packetType
+        FD_ISEDITABLE,    // FIELD_packetType
     };
     return (field >= 0 && field < 1) ? fieldTypeFlags[field] : 0;
 }
@@ -437,6 +437,7 @@ void AodvSdnControlPacketDescriptor::setFieldValueAsString(omnetpp::any_ptr obje
     }
     AodvSdnControlPacket *pp = omnetpp::fromAnyPtr<AodvSdnControlPacket>(object); (void)pp;
     switch (field) {
+        case FIELD_packetType: pp->setPacketType((inet::aodvSdn::AodvSdnControlPacketType)string2enum(value, "inet::aodvSdn::AodvSdnControlPacketType")); break;
         default: throw omnetpp::cRuntimeError("Cannot set field %d of class 'AodvSdnControlPacket'", field);
     }
 }
@@ -468,6 +469,7 @@ void AodvSdnControlPacketDescriptor::setFieldValue(omnetpp::any_ptr object, int 
     }
     AodvSdnControlPacket *pp = omnetpp::fromAnyPtr<AodvSdnControlPacket>(object); (void)pp;
     switch (field) {
+        case FIELD_packetType: pp->setPacketType(static_cast<inet::aodvSdn::AodvSdnControlPacketType>(value.intValue())); break;
         default: throw omnetpp::cRuntimeError("Cannot set field %d of class 'AodvSdnControlPacket'", field);
     }
 }
@@ -5039,7 +5041,7 @@ unsigned int RegreqDescriptor::getFieldTypeFlags(int field) const
         field -= base->getFieldCount();
     }
     static unsigned int fieldTypeFlags[] = {
-        0,    // FIELD_nice
+        FD_ISEDITABLE,    // FIELD_nice
         FD_ISEDITABLE,    // FIELD_hopCount
         0,    // FIELD_sourceAddr
         FD_ISEDITABLE,    // FIELD_noOfNeighbors
@@ -5216,6 +5218,7 @@ void RegreqDescriptor::setFieldValueAsString(omnetpp::any_ptr object, int field,
     }
     Regreq *pp = omnetpp::fromAnyPtr<Regreq>(object); (void)pp;
     switch (field) {
+        case FIELD_nice: pp->setNice((inet::aodvSdn::SdnNiceType)string2enum(value, "inet::aodvSdn::SdnNiceType")); break;
         case FIELD_hopCount: pp->setHopCount(string2ulong(value)); break;
         case FIELD_noOfNeighbors: pp->setNoOfNeighbors(string2ulong(value)); break;
         case FIELD_noOfQos: pp->setNoOfQos(string2ulong(value)); break;
@@ -5257,6 +5260,7 @@ void RegreqDescriptor::setFieldValue(omnetpp::any_ptr object, int field, int i, 
     }
     Regreq *pp = omnetpp::fromAnyPtr<Regreq>(object); (void)pp;
     switch (field) {
+        case FIELD_nice: pp->setNice(static_cast<inet::aodvSdn::SdnNiceType>(value.intValue())); break;
         case FIELD_hopCount: pp->setHopCount(omnetpp::checked_int_cast<unsigned int>(value.intValue())); break;
         case FIELD_noOfNeighbors: pp->setNoOfNeighbors(omnetpp::checked_int_cast<uint16_t>(value.intValue())); break;
         case FIELD_noOfQos: pp->setNoOfQos(omnetpp::checked_int_cast<uint16_t>(value.intValue())); break;
@@ -5914,7 +5918,7 @@ unsigned int RegrepDescriptor::getFieldTypeFlags(int field) const
         field -= base->getFieldCount();
     }
     static unsigned int fieldTypeFlags[] = {
-        0,    // FIELD_nice
+        FD_ISEDITABLE,    // FIELD_nice
         FD_ISEDITABLE,    // FIELD_hopCount
         FD_ISCOMPOUND,    // FIELD_ofpHeader
         FD_ISARRAY | FD_ISEDITABLE | FD_ISRESIZABLE,    // FIELD_ofpData
@@ -6076,6 +6080,7 @@ void RegrepDescriptor::setFieldValueAsString(omnetpp::any_ptr object, int field,
     }
     Regrep *pp = omnetpp::fromAnyPtr<Regrep>(object); (void)pp;
     switch (field) {
+        case FIELD_nice: pp->setNice((inet::aodvSdn::SdnNiceType)string2enum(value, "inet::aodvSdn::SdnNiceType")); break;
         case FIELD_hopCount: pp->setHopCount(string2ulong(value)); break;
         case FIELD_ofpData: pp->setOfpData(i,string2ulong(value)); break;
         default: throw omnetpp::cRuntimeError("Cannot set field %d of class 'Regrep'", field);
@@ -6112,6 +6117,7 @@ void RegrepDescriptor::setFieldValue(omnetpp::any_ptr object, int field, int i, 
     }
     Regrep *pp = omnetpp::fromAnyPtr<Regrep>(object); (void)pp;
     switch (field) {
+        case FIELD_nice: pp->setNice(static_cast<inet::aodvSdn::SdnNiceType>(value.intValue())); break;
         case FIELD_hopCount: pp->setHopCount(omnetpp::checked_int_cast<unsigned int>(value.intValue())); break;
         case FIELD_ofpData: pp->setOfpData(i,omnetpp::checked_int_cast<uint8_t>(value.intValue())); break;
         default: throw omnetpp::cRuntimeError("Cannot set field %d of class 'Regrep'", field);
