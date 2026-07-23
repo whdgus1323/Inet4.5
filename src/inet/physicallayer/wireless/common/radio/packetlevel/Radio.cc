@@ -679,6 +679,8 @@ void Radio::endReception(cMessage *timer)
             */
 
             receptionTimer = nullptr;
+            updateTransceiverState();
+            updateTransceiverPart();
             delete timer;
             return;
         }

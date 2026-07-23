@@ -64,6 +64,45 @@ class INET_API Aodv : public RoutingProtocolBase, public NetfilterBase::HookBase
         }
     };
 
+    class INET_API AcceptedRreqRecord {
+      public:
+        L3Address destinationAddr;
+        L3Address peerAddr;
+        unsigned int hopCount = 0;
+        simtime_t acceptedTime = SIMTIME_ZERO;
+    };
+
+    class INET_API SourceDiscoveryRecord {
+      public:
+        unsigned int rreqId = 0;
+        simtime_t startTime = SIMTIME_ZERO;
+        L3Address packetSourceAddr;
+        L3Address packetDestinationAddr;
+        bool isSelfOriginatedDatagram = false;
+        bool hasDatagramContext = false;
+    };
+
+    class INET_API RouteHistoryKey {
+      public:
+        L3Address destinationAddr;
+        L3Address nextHopAddr;
+        RouteHistoryKey(const L3Address& destinationAddr, const L3Address& nextHopAddr) :
+            destinationAddr(destinationAddr), nextHopAddr(nextHopAddr) {}
+    };
+
+    class INET_API RouteHistoryKeyCompare {
+      public:
+        bool operator()(const RouteHistoryKey& lhs, const RouteHistoryKey& rhs) const
+        {
+            if (lhs.destinationAddr < rhs.destinationAddr)
+                return true;
+            else if (lhs.destinationAddr > rhs.destinationAddr)
+                return false;
+            else
+                return lhs.nextHopAddr < rhs.nextHopAddr;
+        }
+    };
+
     // context
     const IL3AddressType *addressType = nullptr; // to support both Ipv4 and v6 addresses.
 
@@ -226,9 +265,14 @@ class INET_API Aodv : public RoutingProtocolBase, public NetfilterBase::HookBase
     simtime_t cbrBasedRrepHighDelay;
     bool cbrRrepMetricsEnabled = false;
     bool cbrRrepDecisionLogEnabled = false;
+    bool aodvControlLogEnabled = false;
     bool dlDirectThresholdRrepDebugLogEnabled = false;
     bool cbrRouteCauseLogEnabled = false;
     bool transmissionFailureDiagnosisLogEnabled = false;
+    bool radioStateDiagnosisLogEnabled = false;
+    // Ground-truth raw dataset logging switch.
+    bool groundTruthDatasetLogEnabled = false;
+    bool inputDatasetLogEnabled = false;
     bool useBdStationCount = false;
 
     // the following parameters are calculated from the parameters defined above
@@ -274,6 +318,14 @@ class INET_API Aodv : public RoutingProtocolBase, public NetfilterBase::HookBase
     unsigned int metricsRouteDiscoveryDelayCount = 0;
     std::map<L3Address, simtime_t> metricsRouteDiscoveryStartTimes;
     std::map<L3Address, unsigned int> metricsRouteDiscoveryCandidateCounts;
+    unsigned int inputRreqReceivedCount = 0;
+    unsigned int inputRrepReceivedCount = 0;
+    unsigned int inputRerrReceivedCount = 0;
+    unsigned int inputMacAckReceivedCount = 0;
+    unsigned int inputRrepAckReceivedCount = 0;
+    unsigned int inputDataRouteUseCount = 0;
+    unsigned int inputDataRouteMissCount = 0;
+    std::vector<double> inputRreqReceiveSpeedSamplesKmh;
     unsigned int diagnosisNoRouteToForwardCount = 0;
     unsigned int diagnosisNoActiveRouteToForwardCount = 0;
     unsigned int diagnosisRouteInvalidateCount = 0;
@@ -296,6 +348,10 @@ class INET_API Aodv : public RoutingProtocolBase, public NetfilterBase::HookBase
 
     // internal
     std::multimap<L3Address, Packet *> targetAddressToDelayedPackets; // queue for the datagrams we have no route for
+    std::map<RreqIdentifier, AcceptedRreqRecord, RreqIdentifierCompare> acceptedRreqRecords;
+    std::map<L3Address, SourceDiscoveryRecord> sourceDiscoveryRecords;
+    std::map<L3Address, SourceDiscoveryRecord> pendingSourceDiscoveryRecords;
+    std::map<RouteHistoryKey, simtime_t, RouteHistoryKeyCompare> routeFirstFormedTimes;
 
   protected:
     void handleMessageWhenUp(cMessage *msg) override;
@@ -330,13 +386,37 @@ class INET_API Aodv : public RoutingProtocolBase, public NetfilterBase::HookBase
     void logSummary1s();
     void logCbrRrepMetrics1s();
     void logTransmissionFailureDiagnosis1s();
+    void logRadioStateDiagnosis1s();
+    void logInputDataset1s();
     int countCurrentNeighbors() const;
     int getBdStationCount() const;
+    double getCurrentNodeSpeed() const;
+    void ensureAodvControlLogFile() const;
+    void logAodvControlEvent(const std::string& event, const std::string& source, const std::string& target, const std::string& originator, const std::string& destination, const std::string& rreqId, const std::string& hopCount, const std::string& ttl, const std::string& retryCount, const std::string& jitter, const std::string& replyType = "", const std::string& localCbr = "", const std::string& appliedLowThreshold = "", const std::string& appliedHighThreshold = "", const std::string& destRouteNextHop = "", const std::string& reverseRouteNextHop = "", const std::string& packetSource = "", const std::string& packetDestination = "", const std::string& rawOriginatorIp = "", const std::string& rawDestinationIp = "", const std::string& resolvedOriginatorNode = "", const std::string& resolvedDestinationNode = "", const std::string& isSelfOriginatedDatagram = "") const;
     void ensureCbrRrepDecisionLogFile() const;
+    std::string addressToNodeName(const L3Address& address) const;
     void logCbrRrepDecision(const Ptr<Rreq>& rreq, const L3Address& sourceAddr, double localCbr, const char *decision, double appliedLowThreshold, double appliedHighThreshold) const;
     void ensureDlDirectThresholdRrepDebugLogFile() const;
     void logDlDirectThresholdRrepDebug(const Ptr<Rreq>& rreq, const L3Address& sourceAddr, double localCbr, int neighborCount, unsigned int hopCount, bool isDirectRouteToDestination, const std::vector<double>& inputs, const std::array<double, 2>& rawOutputs, double predictedLow, double predictedHigh, const char *decision) const;
     void logRouteCauseEvent(const char *event, const L3Address& routeDest, const L3Address& nextHop, unsigned int hopCount, bool isActive, simtime_t lifeTime, const char *reason) const;
+    // Ground-truth raw dataset logging helpers.
+    void ensureGroundTruthDiscoveryLogFile() const;
+    void ensureGroundTruthMaintenanceLogFile() const;
+    void logGroundTruthDiscoveryEvent(const char *event, const L3Address& originator, const L3Address& destination, unsigned int rreqId,
+            const L3Address& peer, unsigned int hopCount, int labelHint, const char *note,
+            unsigned int matchedRreqId = 0, simtime_t pairedAcceptedTime = SIMTIME_ZERO,
+            simtime_t sourceDiscoveryStartTime = SIMTIME_ZERO, simtime_t elapsedSincePaired = SIMTIME_ZERO,
+            unsigned int sourceRetryCount = 0) const;
+    void logGroundTruthMaintenanceEvent(const char *event, const L3Address& routeDest, const L3Address& nextHop, unsigned int hopCount,
+            bool isActive, simtime_t lifeTime, const char *reason, const char *note,
+            simtime_t routeFormedTime = SIMTIME_ZERO, simtime_t elapsedSinceRouteFormed = SIMTIME_ZERO,
+            simtime_t remainingLifetime = SIMTIME_ZERO, simtime_t referenceLifetime = SIMTIME_ZERO,
+            unsigned int precursorCount = 0, unsigned int unreachableCount = 0) const;
+    int countAodvCapableNodes() const;
+    bool findAcceptedRreqForRrep(const L3Address& originator, const L3Address& destination, unsigned int& matchedRreqId, simtime_t& acceptedTime) const;
+    void rememberRouteFormation(const L3Address& routeDest, const L3Address& nextHop, simtime_t formedTime);
+    simtime_t findRouteFormationTime(const L3Address& routeDest, const L3Address& nextHop) const;
+    void eraseRouteFormation(const L3Address& routeDest, const L3Address& nextHop);
 
     /* Control Packet handlers */
     void handleRREP(const Ptr<Rrep>& rrep, const L3Address& sourceAddr);

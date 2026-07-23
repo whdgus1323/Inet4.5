@@ -7,10 +7,12 @@
 
 #include "inet/routing/aodv/Aodv.h"
 
+#include <algorithm>
 #include <filesystem>
 #include <fstream>
 #include <array>
 #include <cmath>
+#include <functional>
 #include <limits>
 #include <sstream>
 #include <stdexcept>
@@ -18,9 +20,11 @@
 #include "inet/common/IProtocolRegistrationListener.h"
 #include "inet/common/ModuleAccess.h"
 #include "inet/common/ProtocolTag_m.h"
+#include "inet/common/Simsignals.h"
 #include "inet/common/packet/Packet.h"
 #include "inet/common/stlutils.h"
 #include "inet/linklayer/common/InterfaceTag_m.h"
+#include "inet/linklayer/ieee80211/mac/Ieee80211Frame_m.h"
 #include "inet/linklayer/ieee80211/mac/Ieee80211Mac.h"
 #include "inet/networklayer/common/HopLimitTag_m.h"
 #include "inet/networklayer/common/L3AddressResolver.h"
@@ -65,6 +69,40 @@ std::string joinUnreachableNodes(const std::vector<UnreachableNode>& nodes)
     return os.str();
 }
 
+std::string readFirstLine(const std::string& filePath)
+{
+    std::ifstream in(filePath);
+    std::string firstLine;
+    std::getline(in, firstLine);
+    return firstLine;
+}
+
+std::string nextBackupPath(const std::string& filePath)
+{
+    for (int suffix = 1; ; suffix++) {
+        std::string candidate = filePath + ".schema_backup_" + std::to_string(suffix);
+        if (!std::filesystem::exists(candidate))
+            return candidate;
+    }
+}
+
+void ensureCsvSchemaHeader(const std::string& filePath, const std::string& headerLine)
+{
+    if (std::filesystem::exists(filePath) && std::filesystem::file_size(filePath) > 0) {
+        std::string currentHeader = readFirstLine(filePath);
+        if (currentHeader == headerLine)
+            return;
+
+        std::filesystem::rename(filePath, nextBackupPath(filePath));
+    }
+
+    std::ofstream out(filePath, std::ios::trunc);
+    if (!out.is_open())
+        return;
+
+    out << headerLine << "\n";
+}
+
 double clamp01(double value)
 {
     return std::max(0.0, std::min(1.0, value));
@@ -103,7 +141,99 @@ double roundToDigits(double value, int digits)
     return std::round(value * scale) / scale;
 }
 
+double percentileFromSamples(std::vector<double> samples, double percentile)
+{
+    if (samples.empty())
+        return 0.0;
+    if (percentile <= 0.0)
+        return *std::min_element(samples.begin(), samples.end());
+    if (percentile >= 100.0)
+        return *std::max_element(samples.begin(), samples.end());
+
+    std::sort(samples.begin(), samples.end());
+    double position = (percentile / 100.0) * static_cast<double>(samples.size() - 1);
+    size_t lowerIndex = static_cast<size_t>(std::floor(position));
+    size_t upperIndex = static_cast<size_t>(std::ceil(position));
+    if (lowerIndex == upperIndex)
+        return samples[lowerIndex];
+
+    double ratio = position - lowerIndex;
+    return samples[lowerIndex] + (samples[upperIndex] - samples[lowerIndex]) * ratio;
+}
+
 } // namespace
+
+int Aodv::countAodvCapableNodes() const
+{
+    auto *systemModule = getSimulation()->getSystemModule();
+    if (systemModule == nullptr)
+        return 0;
+
+    int count = 0;
+    std::function<void(cModule *)> visit = [&](cModule *module) {
+        if (module == nullptr)
+            return;
+
+        cModule *routingSubmodule = module->getSubmodule("routing");
+        if (routingSubmodule != nullptr && dynamic_cast<Aodv *>(routingSubmodule) != nullptr)
+            count++;
+
+        for (cModule::SubmoduleIterator it(module); !it.end(); ++it) {
+            cModule *child = *it;
+            if (child != nullptr)
+                visit(child);
+        }
+    };
+    visit(systemModule);
+    return count;
+}
+
+bool Aodv::findAcceptedRreqForRrep(const L3Address& originator, const L3Address& destination, unsigned int& matchedRreqId, simtime_t& acceptedTime) const
+{
+    bool found = false;
+    simtime_t latestAcceptedTime = SIMTIME_ZERO;
+    unsigned int latestRreqId = 0;
+
+    for (const auto& entry : acceptedRreqRecords) {
+        const auto& identifier = entry.first;
+        const auto& record = entry.second;
+        if (identifier.originatorAddr != originator)
+            continue;
+        if (record.destinationAddr != destination)
+            continue;
+        if (record.acceptedTime > latestAcceptedTime) {
+            latestAcceptedTime = record.acceptedTime;
+            latestRreqId = identifier.rreqID;
+            found = true;
+        }
+    }
+
+    if (!found)
+        return false;
+
+    matchedRreqId = latestRreqId;
+    acceptedTime = latestAcceptedTime;
+    return true;
+}
+
+void Aodv::rememberRouteFormation(const L3Address& routeDest, const L3Address& nextHop, simtime_t formedTime)
+{
+    routeFirstFormedTimes[RouteHistoryKey(routeDest, nextHop)] = formedTime;
+}
+
+simtime_t Aodv::findRouteFormationTime(const L3Address& routeDest, const L3Address& nextHop) const
+{
+    auto it = routeFirstFormedTimes.find(RouteHistoryKey(routeDest, nextHop));
+    if (it != routeFirstFormedTimes.end())
+        return it->second;
+
+    return SIMTIME_ZERO;
+}
+
+void Aodv::eraseRouteFormation(const L3Address& routeDest, const L3Address& nextHop)
+{
+    routeFirstFormedTimes.erase(RouteHistoryKey(routeDest, nextHop));
+}
 
 Define_Module(Aodv);
 
@@ -203,9 +333,13 @@ void Aodv::initialize(int stage)
         cbrBasedRrepHighDelay = par("cbrBasedRrepHighDelay");
         cbrRrepMetricsEnabled = par("cbrRrepMetricsEnabled");
         cbrRrepDecisionLogEnabled = par("cbrRrepDecisionLogEnabled");
+        aodvControlLogEnabled = par("aodvControlLogEnabled");
         dlDirectThresholdRrepDebugLogEnabled = par("dlDirectThresholdRrepDebugLogEnabled");
         cbrRouteCauseLogEnabled = par("cbrRouteCauseLogEnabled");
         transmissionFailureDiagnosisLogEnabled = par("transmissionFailureDiagnosisLogEnabled");
+        radioStateDiagnosisLogEnabled = par("radioStateDiagnosisLogEnabled");
+        groundTruthDatasetLogEnabled = par("groundTruthDatasetLogEnabled");
+        inputDatasetLogEnabled = par("inputDatasetLogEnabled");
         useBdStationCount = par("useBdStationCount");
         if (dlBasedRrepEnabled)
             loadDlBasedRrepParameters();
@@ -290,6 +424,7 @@ void Aodv::initialize(int stage)
     else if (stage == INITSTAGE_ROUTING_PROTOCOLS) {
         networkProtocol->registerHook(0, this);
         host->subscribe(linkBrokenSignal, this);
+        host->subscribe(packetReceivedFromPeerSignal, this);
         usingIpv6 = (routingTable->getRouterIdAsGeneric().getType() == L3Address::IPv6);
         if (cbrRrepDecisionLogEnabled)
             ensureCbrRrepDecisionLogFile();
@@ -307,7 +442,9 @@ void Aodv::handleMessageWhenUp(cMessage *msg)
             expungeRoutes();
         else if (msg == counterTimer) {
             logSummary1s();
+            logInputDataset1s();
             logTransmissionFailureDiagnosis1s();
+            logRadioStateDiagnosis1s();
             logCbrRrepMetrics1s();
             rreqCount = rerrCount = 0;
             scheduleAfter(1, counterTimer);
@@ -400,6 +537,7 @@ INetfilter::IHook::Result Aodv::ensureRouteForDatagram(Packet *datagram)
     const auto& networkHeader = getNetworkProtocolHeader(datagram);
     const L3Address& destAddr = networkHeader->getDestinationAddress();
     const L3Address& sourceAddr = networkHeader->getSourceAddress();
+    bool isSelfOriginated = sourceAddr == getSelfIPAddress();
 
     if (destAddr.isBroadcast() || routingTable->isLocalAddress(destAddr) || destAddr.isMulticast())
         return ACCEPT;
@@ -410,6 +548,15 @@ INetfilter::IHook::Result Aodv::ensureRouteForDatagram(Packet *datagram)
         bool isActive = routeData && routeData->isActive();
         if (isActive && !route->getNextHopAsGeneric().isUnspecified()) {
             EV_INFO << "Active route found: " << route << endl;
+            if (isSelfOriginated) {
+                inputDataRouteUseCount++;
+                simtime_t routeFormedTime = findRouteFormationTime(destAddr, route->getNextHopAsGeneric());
+                simtime_t routeAge = routeFormedTime > SIMTIME_ZERO ? simTime() - routeFormedTime : SIMTIME_ZERO;
+                simtime_t remainingLifetime = routeData->getLifeTime() > simTime() ? routeData->getLifeTime() - simTime() : SIMTIME_ZERO;
+                logGroundTruthMaintenanceEvent("DATA_ROUTE_USE", destAddr, route->getNextHopAsGeneric(), route->getMetric(),
+                        true, routeData->getLifeTime(), "source_datagram", "active_route_used_for_data",
+                        routeFormedTime, routeAge, remainingLifetime, activeRouteTimeout, 0, 0);
+            }
 
             // Each time a route is used to forward a data packet, its Active Route
             // Lifetime field of the source, destination and the next hop on the
@@ -429,10 +576,29 @@ INetfilter::IHook::Result Aodv::ensureRouteForDatagram(Packet *datagram)
             // valid route to the destination expires or is marked as invalid.
 
             EV_INFO << (isInactive ? "Inactive" : "Missing") << " route for destination " << destAddr << endl;
+            if (isSelfOriginated) {
+                inputDataRouteMissCount++;
+                simtime_t routeFormedTime = (route != nullptr) ? findRouteFormationTime(destAddr, route->getNextHopAsGeneric()) : SIMTIME_ZERO;
+                simtime_t routeAge = routeFormedTime > SIMTIME_ZERO ? simTime() - routeFormedTime : SIMTIME_ZERO;
+                simtime_t remainingLifetime = (routeData != nullptr && routeData->getLifeTime() > simTime()) ? routeData->getLifeTime() - simTime() : SIMTIME_ZERO;
+                logGroundTruthMaintenanceEvent("DATA_ROUTE_MISS", destAddr,
+                        route != nullptr ? route->getNextHopAsGeneric() : L3Address(), route != nullptr ? route->getMetric() : 0,
+                        false, routeData != nullptr ? routeData->getLifeTime() : SIMTIME_ZERO,
+                        isInactive ? "source_datagram_inactive_route" : "source_datagram_missing_route",
+                        isInactive ? "data_packet_arrived_with_inactive_route" : "data_packet_arrived_without_route",
+                        routeFormedTime, routeAge, remainingLifetime, activeRouteTimeout, 0, 0);
+            }
 
             delayDatagram(datagram);
 
             if (!hasOngoingRouteDiscovery(destAddr)) {
+                SourceDiscoveryRecord pendingRecord;
+                pendingRecord.packetSourceAddr = sourceAddr;
+                pendingRecord.packetDestinationAddr = destAddr;
+                pendingRecord.isSelfOriginatedDatagram = isSelfOriginated;
+                pendingRecord.hasDatagramContext = true;
+                pendingSourceDiscoveryRecords[destAddr] = pendingRecord;
+
                 // When a new route to the same destination is required at a later time
                 // (e.g., upon route loss), the TTL in the RREQ IP header is initially
                 // set to the Hop Count plus TTL_INCREMENT.
@@ -468,6 +634,18 @@ void Aodv::startRouteDiscovery(const L3Address& target, unsigned timeToLive)
         metricsRouteDiscoveryCandidateCounts[target] = 0;
     }
     auto rreq = createRREQ(target);
+    SourceDiscoveryRecord record;
+    auto pendingRecordIt = pendingSourceDiscoveryRecords.find(target);
+    if (pendingRecordIt != pendingSourceDiscoveryRecords.end()) {
+        record = pendingRecordIt->second;
+        pendingSourceDiscoveryRecords.erase(pendingRecordIt);
+    }
+    record.rreqId = rreq->getRreqId();
+    record.startTime = simTime();
+    sourceDiscoveryRecords[target] = record;
+    logGroundTruthDiscoveryEvent("ROUTE_DISCOVERY_START_SOURCE", getSelfIPAddress(), target, rreq->getRreqId(),
+            L3Address(), 0, -1, "source_broadcasts_new_rreq",
+            rreq->getRreqId(), SIMTIME_ZERO, simTime(), SIMTIME_ZERO, 0);
     addressToRreqRetries[target] = 0;
     sendRREQ(rreq, addressType->getBroadcastAddress(), timeToLive);
 }
@@ -556,16 +734,20 @@ void Aodv::sendRREQ(const Ptr<Rreq>& rreq, const L3Address& destAddr, unsigned i
 
     // Keep route discovery unchanged; MAC-level repetition is applied later for broadcast RREQs.
     simtime_t baseDelay = SimTime((double)*jitterPar, SIMTIME_S);
-    /*
-    appendAodvMetric("aodv_control_log.txt",
-            "time=" + simTime().str() +
-            ", node=" + std::string(getParentModule()->getFullName()) +
-            ", event=RREQ_SEND, target=" + rreq->getDestAddr().str() +
-            ", originator=" + rreq->getOriginatorAddr().str() +
-            ", ttl=" + std::to_string(timeToLive) +
-            ", rreqId=" + std::to_string(rreq->getRreqId()) +
-            ", retryCount=" + std::to_string(addressToRreqRetries[rreq->getDestAddr()]) +
-            ", jitter=" + baseDelay.str());*/
+    if (aodvControlLogEnabled) {
+        auto sourceDiscoveryIt = sourceDiscoveryRecords.find(rreq->getDestAddr());
+        if (sourceDiscoveryIt != sourceDiscoveryRecords.end() && rreq->getOriginatorAddr() == getSelfIPAddress())
+            sourceDiscoveryIt->second.rreqId = rreq->getRreqId();
+        const SourceDiscoveryRecord *sourceDiscoveryRecord = sourceDiscoveryIt != sourceDiscoveryRecords.end() ? &sourceDiscoveryIt->second : nullptr;
+        logAodvControlEvent("RREQ_SEND", getParentModule()->getFullName(), destAddr.str(), addressToNodeName(rreq->getOriginatorAddr()), addressToNodeName(rreq->getDestAddr()),
+                std::to_string(rreq->getRreqId()), std::to_string(rreq->getHopCount()), std::to_string(timeToLive), std::to_string(addressToRreqRetries[rreq->getDestAddr()]), baseDelay.str(),
+                "", std::to_string(getLocalCbr()), "", "", "", "",
+                sourceDiscoveryRecord != nullptr && sourceDiscoveryRecord->hasDatagramContext ? sourceDiscoveryRecord->packetSourceAddr.str() : "",
+                sourceDiscoveryRecord != nullptr && sourceDiscoveryRecord->hasDatagramContext ? sourceDiscoveryRecord->packetDestinationAddr.str() : "",
+                rreq->getOriginatorAddr().str(), rreq->getDestAddr().str(),
+                addressToNodeName(rreq->getOriginatorAddr()), addressToNodeName(rreq->getDestAddr()),
+                sourceDiscoveryRecord != nullptr && sourceDiscoveryRecord->hasDatagramContext ? (sourceDiscoveryRecord->isSelfOriginatedDatagram ? "1" : "0") : "");
+    }
     sendAODVPacket(rreq, destAddr, timeToLive, baseDelay.dbl());
 
 
@@ -575,15 +757,6 @@ void Aodv::sendRREQ(const Ptr<Rreq>& rreq, const L3Address& destAddr, unsigned i
 void Aodv::sendRREP(const Ptr<Rrep>& rrep, const L3Address& destAddr, unsigned int timeToLive, simtime_t delay)
 {
     EV_INFO << "Sending Route Reply to " << destAddr << endl;
-    /*
-    appendAodvMetric("aodv_control_log.txt",
-            "time=" + simTime().str() +
-            ", node=" + std::string(getParentModule()->getFullName()) +
-            ", event=RREP_SEND, target=" + destAddr.str() +
-            ", originator=" + rrep->getOriginatorAddr().str() +
-            ", destination=" + rrep->getDestAddr().str() +
-            ", hopCount=" + std::to_string(rrep->getHopCount()) +
-            ", ttl=" + std::to_string(timeToLive));*/
 
     // When any node transmits a RREP, the precursor list for the
     // corresponding destination node is updated by adding to it
@@ -595,6 +768,10 @@ void Aodv::sendRREP(const Ptr<Rrep>& rrep, const L3Address& destAddr, unsigned i
         return;
     }
     const L3Address& nextHop = destRoute->getNextHopAsGeneric();
+    if (aodvControlLogEnabled)
+        logAodvControlEvent("RREP_SEND", getParentModule()->getFullName(), addressToNodeName(nextHop), addressToNodeName(rrep->getOriginatorAddr()), addressToNodeName(rrep->getDestAddr()),
+                "", std::to_string(rrep->getHopCount()), std::to_string(timeToLive), "", "",
+                "", std::to_string(getLocalCbr()), "", "", "", "");
     AodvRouteData *destRouteData = check_and_cast<AodvRouteData *>(destRoute->getProtocolData());
     destRouteData->addPrecursor(nextHop);
     logPrecursorAddition("SEND_RREP_DEST", destRoute->getDestinationAsGeneric(), nextHop, destRouteData->getPrecursorList());
@@ -1732,20 +1909,37 @@ void Aodv::handleRREP(const Ptr<Rrep>& rrep, const L3Address& sourceAddr)
 
     EV_INFO << "AODV Route Reply arrived with source addr: " << sourceAddr << " originator addr: " << rrep->getOriginatorAddr()
                     << " destination addr: " << rrep->getDestAddr() << endl;
-    /*
-    appendAodvMetric("aodv_control_log.txt",
-            "time=" + simTime().str() +
-            ", node=" + std::string(getParentModule()->getFullName()) +
-            ", event=RREP_RECV, source=" + sourceAddr.str() +
-            ", originator=" + rrep->getOriginatorAddr().str() +
-            ", destination=" + rrep->getDestAddr().str() +
-            ", hopCount=" + std::to_string(rrep->getHopCount()));*/
-
     if (rrep->getOriginatorAddr().isUnspecified()) {
+        if (aodvControlLogEnabled)
+            logAodvControlEvent("RREP_RECV", addressToNodeName(sourceAddr), getParentModule()->getFullName(), addressToNodeName(rrep->getOriginatorAddr()), addressToNodeName(rrep->getDestAddr()),
+                    "", std::to_string(rrep->getHopCount()), "", "", "",
+                    "hello", std::to_string(getLocalCbr()), "", "", "", "");
         EV_INFO << "This Route Reply is a Hello Message" << endl;
         handleHelloMessage(rrep);
         return;
     }
+    inputRrepReceivedCount++;
+    unsigned int matchedRreqId = 0;
+    simtime_t pairedAcceptedTime = SIMTIME_ZERO;
+    bool hasMatchedAcceptedRreq = false;
+    if (getSelfIPAddress() == rrep->getOriginatorAddr()) {
+        auto sourceDiscoveryIt = sourceDiscoveryRecords.find(rrep->getDestAddr());
+        if (sourceDiscoveryIt != sourceDiscoveryRecords.end()) {
+            matchedRreqId = sourceDiscoveryIt->second.rreqId;
+            pairedAcceptedTime = sourceDiscoveryIt->second.startTime;
+            hasMatchedAcceptedRreq = true;
+        }
+    }
+    else
+        hasMatchedAcceptedRreq = findAcceptedRreqForRrep(rrep->getOriginatorAddr(), rrep->getDestAddr(), matchedRreqId, pairedAcceptedTime);
+    if (aodvControlLogEnabled)
+        logAodvControlEvent("RREP_RECV", addressToNodeName(sourceAddr), getParentModule()->getFullName(), addressToNodeName(rrep->getOriginatorAddr()), addressToNodeName(rrep->getDestAddr()),
+                hasMatchedAcceptedRreq ? std::to_string(matchedRreqId) : "", std::to_string(rrep->getHopCount()), "", "", "",
+                hasMatchedAcceptedRreq ? "matched_local_rreq" : "unmatched_local_rreq", std::to_string(getLocalCbr()), "", "", "", "");
+    logGroundTruthDiscoveryEvent("RREP_RECV", rrep->getOriginatorAddr(), rrep->getDestAddr(), 0,
+            sourceAddr, rrep->getHopCount(), 1,
+            hasMatchedAcceptedRreq ? "paired_with_latest_accepted_rreq" : "no_local_rreq_pair_found",
+            matchedRreqId, pairedAcceptedTime, SIMTIME_ZERO, hasMatchedAcceptedRreq ? simTime() - pairedAcceptedTime : SIMTIME_ZERO, 0);
     if (cbrRrepMetricsEnabled && hasOngoingRouteDiscovery(rrep->getDestAddr())) {
         metricsRrepReceivedCount++;
         metricsRouteDiscoveryCandidateCounts[rrep->getDestAddr()]++;
@@ -1840,6 +2034,11 @@ void Aodv::handleRREP(const Ptr<Rrep>& rrep, const L3Address& sourceAddr)
             return;
         }
     }
+    simtime_t absoluteLifeTime = simTime() + lifeTime;
+    rememberRouteFormation(rrep->getDestAddr(), sourceAddr, simTime());
+    logGroundTruthMaintenanceEvent("ROUTE_FORMED_ON_RREP", rrep->getDestAddr(), sourceAddr, newHopCount, true, absoluteLifeTime,
+            "rrep_processing", "forward_route_created_or_updated",
+            simTime(), SIMTIME_ZERO, lifeTime, activeRouteTimeout, 0, 0);
 
     // If the current node is not the node indicated by the Originator IP
     // Address in the RREP message AND a forward route has been created or
@@ -2104,6 +2303,135 @@ int Aodv::getBdStationCount() const
     return ieee80211Mac->getBdStationCount();
 }
 
+double Aodv::getCurrentNodeSpeed() const
+{
+    if (host == nullptr)
+        return 0.0;
+
+    cModule *mobilityModule = host->getSubmodule("mobility");
+    if (mobilityModule == nullptr)
+        return 0.0;
+
+    auto *mobility = dynamic_cast<IMobility *>(mobilityModule);
+    if (mobility == nullptr)
+        return 0.0;
+
+    return mobility->getCurrentVelocity().length() * 3.6;
+}
+
+void Aodv::logInputDataset1s()
+{
+    if (!inputDatasetLogEnabled || pwd.empty())
+        return;
+
+    std::string externalId = "";
+    auto parent = getParentModule();
+    if (parent != nullptr && parent->hasPar("externalId"))
+        externalId = parent->par("externalId").stdstringValue();
+
+    cModule *nodeModule = getContainingNode(this);
+    int nodeIndex = nodeModule != nullptr ? nodeModule->getIndex() : -1;
+    double localCbr = getLocalCbr();
+    int neighborCount = countCurrentNeighbors();
+    int networkNodeCount = countAodvCapableNodes();
+    int bdStationCount = getBdStationCount();
+    double vehicleSpeed = getCurrentNodeSpeed();
+    double rreqSpeedAvg = 0.0;
+    double rreqSpeedMin = 0.0;
+    double rreqSpeedMax = 0.0;
+    double rreqSpeedP05 = 0.0;
+    double rreqSpeedP10 = 0.0;
+    double rreqSpeedP95 = 0.0;
+    int managedRouteCount = 0;
+    int activeRouteCount = 0;
+    int precursorSum = 0;
+
+    if (!inputRreqReceiveSpeedSamplesKmh.empty()) {
+        double speedSum = 0.0;
+        for (double sample : inputRreqReceiveSpeedSamplesKmh)
+            speedSum += sample;
+        rreqSpeedAvg = speedSum / inputRreqReceiveSpeedSamplesKmh.size();
+        rreqSpeedMin = *std::min_element(inputRreqReceiveSpeedSamplesKmh.begin(), inputRreqReceiveSpeedSamplesKmh.end());
+        rreqSpeedMax = *std::max_element(inputRreqReceiveSpeedSamplesKmh.begin(), inputRreqReceiveSpeedSamplesKmh.end());
+        rreqSpeedP05 = percentileFromSamples(inputRreqReceiveSpeedSamplesKmh, 5.0);
+        rreqSpeedP10 = percentileFromSamples(inputRreqReceiveSpeedSamplesKmh, 10.0);
+        rreqSpeedP95 = percentileFromSamples(inputRreqReceiveSpeedSamplesKmh, 95.0);
+    }
+
+    for (int i = 0; i < routingTable->getNumRoutes(); i++) {
+        IRoute *route = routingTable->getRoute(i);
+        if (route->getSource() != this)
+            continue;
+
+        managedRouteCount++;
+        auto routeData = check_and_cast<AodvRouteData *>(route->getProtocolData());
+        if (routeData->isActive())
+            activeRouteCount++;
+        precursorSum += routeData->getPrecursorList().size();
+    }
+
+    std::filesystem::create_directories(pwd);
+    std::string filePath = pwd + "/aodv_input_dataset_1s.csv";
+    const std::string headerLine =
+            "time,node,nodeIndex,externalId,localCbr,neighborCount,bdStationCount,vehicleSpeedKmh,"
+            "networkNodeCount,"
+            "rreqReceiveSpeedAvgKmh,rreqReceiveSpeedMinKmh,rreqReceiveSpeedMaxKmh,rreqReceiveSpeedP05Kmh,rreqReceiveSpeedP10Kmh,rreqReceiveSpeedP95Kmh,"
+            "originatedRreqCount,originatedRerrCount,rreqReceivedCount,rrepReceivedCount,rerrReceivedCount,macAckReceivedCount,rrepAckReceivedCount,"
+            "rrepCandidateCount,rrepAllowedCount,rrepBlockedCount,routeDiscoveryStartedCount,"
+            "routeDiscoverySucceededCount,routeDiscoveryFailedCount,managedRouteCount,activeRouteCount,"
+            "precursorSum,dataRouteUseCount,dataRouteMissCount,rerrGeneratedCount,rerrUnreachableSum,rerrPrecursorSum";
+    ensureCsvSchemaHeader(filePath, headerLine);
+    std::ofstream out(filePath, std::ios::app);
+    if (!out.is_open())
+        return;
+
+    out << simTime() << ","
+        << getParentModule()->getFullName() << ","
+        << nodeIndex << ","
+        << externalId << ","
+        << localCbr << ","
+        << neighborCount << ","
+        << bdStationCount << ","
+        << vehicleSpeed << ","
+        << networkNodeCount << ","
+        << rreqSpeedAvg << ","
+        << rreqSpeedMin << ","
+        << rreqSpeedMax << ","
+        << rreqSpeedP05 << ","
+        << rreqSpeedP10 << ","
+        << rreqSpeedP95 << ","
+        << rreqCount << ","
+        << rerrCount << ","
+        << inputRreqReceivedCount << ","
+        << inputRrepReceivedCount << ","
+        << inputRerrReceivedCount << ","
+        << inputMacAckReceivedCount << ","
+        << inputRrepAckReceivedCount << ","
+        << metricsRrepCandidateCount << ","
+        << metricsRrepAllowedCount << ","
+        << metricsRrepBlockedCount << ","
+        << metricsRouteDiscoveryStartedCount << ","
+        << metricsRouteDiscoverySucceededCount << ","
+        << metricsRouteDiscoveryFailedCount << ","
+        << managedRouteCount << ","
+        << activeRouteCount << ","
+        << precursorSum << ","
+        << inputDataRouteUseCount << ","
+        << inputDataRouteMissCount << ","
+        << summaryRerrGeneratedCount << ","
+        << summaryRerrUnreachableSum << ","
+        << summaryRerrPrecursorSum << "\n";
+
+    inputRreqReceivedCount = 0;
+    inputRrepReceivedCount = 0;
+    inputRerrReceivedCount = 0;
+    inputMacAckReceivedCount = 0;
+    inputRrepAckReceivedCount = 0;
+    inputDataRouteUseCount = 0;
+    inputDataRouteMissCount = 0;
+    inputRreqReceiveSpeedSamplesKmh.clear();
+}
+
 void Aodv::logCbrRrepMetrics1s()
 {
     if (!cbrRrepMetricsEnabled || pwd.empty())
@@ -2235,6 +2563,84 @@ void Aodv::logTransmissionFailureDiagnosis1s()
     diagnosisRerrOriginatedCount = 0;
 }
 
+void Aodv::logRadioStateDiagnosis1s()
+{
+    if (!radioStateDiagnosisLogEnabled || pwd.empty())
+        return;
+
+    cModule *radioModule = nullptr;
+    if (host != nullptr) {
+        cModule *wlanModule = host->getSubmodule("wlan", 0);
+        if (wlanModule != nullptr)
+            radioModule = wlanModule->getSubmodule("radio");
+    }
+
+    auto *radio = dynamic_cast<physicallayer::Radio *>(radioModule);
+    if (radio == nullptr)
+        return;
+
+    double positionX = std::numeric_limits<double>::quiet_NaN();
+    double positionY = std::numeric_limits<double>::quiet_NaN();
+    double positionZ = std::numeric_limits<double>::quiet_NaN();
+    if (host != nullptr) {
+        cModule *mobilityModule = host->getSubmodule("mobility");
+        auto *mobility = dynamic_cast<IMobility *>(mobilityModule);
+        if (mobility != nullptr) {
+            Coord position = mobility->getCurrentPosition();
+            positionX = position.x;
+            positionY = position.y;
+            positionZ = position.z;
+        }
+    }
+
+    double localCbr = 100.0 * radio->getCurrentCbr();
+    int neighborCount = countCurrentNeighbors();
+    auto activeRange = getActiveCbrThresholdRange();
+
+    std::filesystem::create_directories(pwd);
+    std::string filePath = pwd + "/aodv_radio_state_diagnosis_1s.csv";
+    const std::string headerLine =
+            "time,node,positionX,positionY,positionZ,localCbr,neighborCount,"
+            "radioMode,receptionState,transmissionState,"
+            "transmissionTimerScheduled,receptionTimerScheduled,"
+            "transmittedSignalPart,receivedSignalPart,"
+            "appliedLowThreshold,appliedHighThreshold,"
+            "routeDiscoveryStarted,routeDiscoverySucceeded,routeDiscoveryFailed,"
+            "rreqReceived,rrepReceived,rrepCandidates,rrepAllowed,rrepBlocked,"
+            "rreqSentInLastSecond,rerrSentInLastSecond";
+    ensureCsvSchemaHeader(filePath, headerLine);
+    std::ofstream out(filePath, std::ios::app);
+    if (!out.is_open())
+        return;
+
+    out << simTime() << ","
+        << getParentModule()->getFullName() << ","
+        << positionX << ","
+        << positionY << ","
+        << positionZ << ","
+        << localCbr << ","
+        << neighborCount << ","
+        << physicallayer::IRadio::getRadioModeName(radio->getRadioMode()) << ","
+        << physicallayer::IRadio::getRadioReceptionStateName(radio->getReceptionState()) << ","
+        << physicallayer::IRadio::getRadioTransmissionStateName(radio->getTransmissionState()) << ","
+        << (radio->isTransmissionTimerScheduledForDiagnostics() ? 1 : 0) << ","
+        << (radio->isReceptionTimerScheduledForDiagnostics() ? 1 : 0) << ","
+        << physicallayer::IRadioSignal::getSignalPartName(radio->getTransmittedSignalPart()) << ","
+        << physicallayer::IRadioSignal::getSignalPartName(radio->getReceivedSignalPart()) << ","
+        << activeRange.first << ","
+        << activeRange.second << ","
+        << metricsRouteDiscoveryStartedCount << ","
+        << metricsRouteDiscoverySucceededCount << ","
+        << metricsRouteDiscoveryFailedCount << ","
+        << metricsRreqReceivedCount << ","
+        << metricsRrepReceivedCount << ","
+        << metricsRrepCandidateCount << ","
+        << metricsRrepAllowedCount << ","
+        << metricsRrepBlockedCount << ","
+        << rreqCount << ","
+        << rerrCount << "\n";
+}
+
 void Aodv::ensureCbrRrepDecisionLogFile() const
 {
     if (!cbrRrepDecisionLogEnabled || pwd.empty())
@@ -2249,7 +2655,16 @@ void Aodv::ensureCbrRrepDecisionLogFile() const
     std::ofstream out(filePath, std::ios::app);
     if (!out.is_open())
         return;
-    out << "time,node,source,originator,destination,rreqId,hopCount,localCbr,threshold,appliedLowThreshold,appliedHighThreshold,decision\n";
+    out << "time,node,source,originator,destination,rreqId,hopCount,localCbr,appliedLowThreshold,appliedHighThreshold,decision\n";
+}
+
+std::string Aodv::addressToNodeName(const L3Address& address) const
+{
+    cModule *hostModule = L3AddressResolver().findHostWithAddress(address);
+    if (hostModule != nullptr)
+        return hostModule->getFullName();
+
+    return address.str();
 }
 
 void Aodv::logCbrRrepDecision(const Ptr<Rreq>& rreq, const L3Address& sourceAddr, double localCbr, const char *decision, double appliedLowThreshold, double appliedHighThreshold) const
@@ -2265,13 +2680,12 @@ void Aodv::logCbrRrepDecision(const Ptr<Rreq>& rreq, const L3Address& sourceAddr
 
     out << simTime() << ","
         << getParentModule()->getFullName() << ","
-        << sourceAddr << ","
-        << rreq->getOriginatorAddr() << ","
-        << rreq->getDestAddr() << ","
+        << addressToNodeName(sourceAddr) << ","
+        << addressToNodeName(rreq->getOriginatorAddr()) << ","
+        << addressToNodeName(rreq->getDestAddr()) << ","
         << rreq->getRreqId() << ","
         << rreq->getHopCount() << ","
         << localCbr << ","
-        << cbrBasedRrepThreshold << ","
         << appliedLowThreshold << ","
         << appliedHighThreshold << ","
         << decision << "\n";
@@ -2327,6 +2741,101 @@ void Aodv::logDlDirectThresholdRrepDebug(const Ptr<Rreq>& rreq, const L3Address&
         << decision << "\n";
 }
 
+// Ground-truth discovery dataset file bootstrap.
+void Aodv::ensureGroundTruthDiscoveryLogFile() const
+{
+    if (!groundTruthDatasetLogEnabled || pwd.empty())
+        return;
+
+    std::filesystem::create_directories(pwd);
+    std::string filePath = pwd + "/aodv_ground_truth_discovery_log.csv";
+    ensureCsvSchemaHeader(filePath,
+            "time,node,nodeIndex,event,originator,destination,rreqId,matchedRreqId,peer,hopCount,labelHint,"
+            "pairedAcceptedTime,sourceDiscoveryStartTime,elapsedSincePaired,sourceRetryCount,note");
+}
+
+// Ground-truth maintenance dataset file bootstrap.
+void Aodv::ensureGroundTruthMaintenanceLogFile() const
+{
+    if (!groundTruthDatasetLogEnabled || pwd.empty())
+        return;
+
+    std::filesystem::create_directories(pwd);
+    std::string filePath = pwd + "/aodv_ground_truth_maintenance_log.csv";
+    ensureCsvSchemaHeader(filePath,
+            "time,node,nodeIndex,event,routeDest,nextHop,hopCount,isActive,lifeTime,routeFormedTime,"
+            "elapsedSinceRouteFormed,remainingLifetime,referenceLifetime,precursorCount,unreachableCount,reason,note");
+}
+
+// Ground-truth raw discovery event logging.
+void Aodv::logGroundTruthDiscoveryEvent(const char *event, const L3Address& originator, const L3Address& destination, unsigned int rreqId,
+        const L3Address& peer, unsigned int hopCount, int labelHint, const char *note,
+        unsigned int matchedRreqId, simtime_t pairedAcceptedTime, simtime_t sourceDiscoveryStartTime,
+        simtime_t elapsedSincePaired, unsigned int sourceRetryCount) const
+{
+    if (!groundTruthDatasetLogEnabled || pwd.empty())
+        return;
+
+    ensureGroundTruthDiscoveryLogFile();
+    cModule *nodeModule = getContainingNode(this);
+    int nodeIndex = nodeModule != nullptr ? nodeModule->getIndex() : -1;
+    std::ofstream out(pwd + "/aodv_ground_truth_discovery_log.csv", std::ios::app);
+    if (!out.is_open())
+        return;
+
+    out << simTime() << ","
+        << getParentModule()->getFullName() << ","
+        << nodeIndex << ","
+        << event << ","
+        << originator << ","
+        << destination << ","
+        << rreqId << ","
+        << matchedRreqId << ","
+        << peer << ","
+        << hopCount << ","
+        << labelHint << ","
+        << pairedAcceptedTime << ","
+        << sourceDiscoveryStartTime << ","
+        << elapsedSincePaired << ","
+        << sourceRetryCount << ","
+        << (note != nullptr ? note : "") << "\n";
+}
+
+// Ground-truth raw maintenance event logging.
+void Aodv::logGroundTruthMaintenanceEvent(const char *event, const L3Address& routeDest, const L3Address& nextHop, unsigned int hopCount,
+        bool isActive, simtime_t lifeTime, const char *reason, const char *note,
+        simtime_t routeFormedTime, simtime_t elapsedSinceRouteFormed, simtime_t remainingLifetime, simtime_t referenceLifetime,
+        unsigned int precursorCount, unsigned int unreachableCount) const
+{
+    if (!groundTruthDatasetLogEnabled || pwd.empty())
+        return;
+
+    ensureGroundTruthMaintenanceLogFile();
+    cModule *nodeModule = getContainingNode(this);
+    int nodeIndex = nodeModule != nullptr ? nodeModule->getIndex() : -1;
+    std::ofstream out(pwd + "/aodv_ground_truth_maintenance_log.csv", std::ios::app);
+    if (!out.is_open())
+        return;
+
+    out << simTime() << ","
+        << getParentModule()->getFullName() << ","
+        << nodeIndex << ","
+        << event << ","
+        << routeDest << ","
+        << nextHop << ","
+        << hopCount << ","
+        << (isActive ? 1 : 0) << ","
+        << lifeTime << ","
+        << routeFormedTime << ","
+        << elapsedSinceRouteFormed << ","
+        << remainingLifetime << ","
+        << referenceLifetime << ","
+        << precursorCount << ","
+        << unreachableCount << ","
+        << (reason != nullptr ? reason : "") << ","
+        << (note != nullptr ? note : "") << "\n";
+}
+
 void Aodv::logRouteCauseEvent(const char *event, const L3Address& routeDest, const L3Address& nextHop, unsigned int hopCount, bool isActive, simtime_t lifeTime, const char *reason) const
 {
     if (!cbrRouteCauseLogEnabled || pwd.empty())
@@ -2361,14 +2870,10 @@ void Aodv::handleRREQ(const Ptr<Rreq>& rreq, const L3Address& sourceAddr, unsign
     if (cbrRrepMetricsEnabled)
         metricsRreqReceivedCount++;
 
-    /*appendAodvMetric("aodv_control_log.txt",
-            "time=" + simTime().str() +
-            ", node=" + std::string(getParentModule()->getFullName()) +
-            ", event=RREQ_RECV, source=" + sourceAddr.str() +
-            ", originator=" + rreq->getOriginatorAddr().str() +
-            ", target=" + rreq->getDestAddr().str() +
-            ", ttl=" + std::to_string(timeToLive) +
-            ", rreqId=" + std::to_string(rreq->getRreqId()));*/
+    if (aodvControlLogEnabled)
+        logAodvControlEvent("RREQ_RECV", addressToNodeName(sourceAddr), getParentModule()->getFullName(), addressToNodeName(rreq->getOriginatorAddr()), addressToNodeName(rreq->getDestAddr()),
+                std::to_string(rreq->getRreqId()), std::to_string(rreq->getHopCount()), std::to_string(timeToLive), "", "",
+                "", std::to_string(getLocalCbr()), "", "", "", "");
 
     // A node ignores all RREQs received from any node in its blacklist set.
 
@@ -2414,7 +2919,14 @@ void Aodv::handleRREQ(const Ptr<Rreq>& rreq, const L3Address& sourceAddr, unsign
 
     // update or create
     rreqsArrivalTime[rreqIdentifier] = simTime();
+    acceptedRreqRecords[rreqIdentifier] = AcceptedRreqRecord { rreq->getDestAddr(), sourceAddr, rreq->getHopCount(), simTime() };
     summaryRreqAcceptCount++;
+    inputRreqReceivedCount++;
+    inputRreqReceiveSpeedSamplesKmh.push_back(getCurrentNodeSpeed());
+    // Ground-truth discovery event: unique RREQ accepted.
+    logGroundTruthDiscoveryEvent("RREQ_ACCEPTED", rreq->getOriginatorAddr(), rreq->getDestAddr(), rreq->getRreqId(),
+            sourceAddr, rreq->getHopCount(), -1, "accepted_unique_rreq",
+            rreq->getRreqId(), simTime(), SIMTIME_ZERO, SIMTIME_ZERO, 0);
     if (enableRreqGraphLog) {
         appendAodvMetric("aodv_rreq_graph_log.csv",
                 "time=" + simTime().str() +
@@ -2519,12 +3031,20 @@ void Aodv::handleRREQ(const Ptr<Rreq>& rreq, const L3Address& sourceAddr, unsign
     if (rreq->getDestAddr() == getSelfIPAddress()) {
         auto activeRange = getActiveCbrThresholdRange();
         logCbrRrepDecision(rreq, sourceAddr, getLocalCbr(), "destination_reply", activeRange.first, activeRange.second);
+        // Ground-truth discovery event: destination generates RREP.
+        logGroundTruthDiscoveryEvent("RREQ_DESTINATION_REPLY", rreq->getOriginatorAddr(), rreq->getDestAddr(), rreq->getRreqId(),
+                sourceAddr, rreq->getHopCount(), -1, "destination_generates_rrep");
         EV_INFO << "I am the destination node for which the route was requested" << endl;
 
         // create RREP
         auto rrep = createRREP(rreq, destRoute, reverseRoute, sourceAddr);
 
         // send to the originator
+        if (aodvControlLogEnabled)
+            logAodvControlEvent("RREP_DECISION", getParentModule()->getFullName(), addressToNodeName(rreq->getOriginatorAddr()), addressToNodeName(rreq->getOriginatorAddr()), addressToNodeName(rreq->getDestAddr()),
+                    std::to_string(rreq->getRreqId()), std::to_string(rrep->getHopCount()), "255", "", "",
+                    "destination_reply", std::to_string(getLocalCbr()), std::to_string(activeRange.first), std::to_string(activeRange.second),
+                    destRoute != nullptr ? addressToNodeName(destRoute->getNextHopAsGeneric()) : "", reverseRoute != nullptr ? addressToNodeName(reverseRoute->getNextHopAsGeneric()) : "");
         sendRREP(rrep, rreq->getOriginatorAddr(), 255);
 
         return; // discard RREQ, in this case, we do not forward it.
@@ -2667,10 +3187,18 @@ void Aodv::handleRREQ(const Ptr<Rreq>& rreq, const L3Address& sourceAddr, unsign
                 return;
             }
             simtime_t intermediateRrepDelay = computeIntermediateRrepDelay(localCbr, isDirectRouteToDestination);
+            // Ground-truth discovery event: intermediate node generates RREP.
+            logGroundTruthDiscoveryEvent("RREQ_INTERMEDIATE_REPLY", rreq->getOriginatorAddr(), rreq->getDestAddr(), rreq->getRreqId(),
+                    sourceAddr, rreq->getHopCount(), -1, "intermediate_generates_rrep");
             // create RREP
             auto rrep = createRREP(rreq, destRoute, reverseRoute, sourceAddr);
 
             // send to the originator
+            if (aodvControlLogEnabled)
+                logAodvControlEvent("RREP_DECISION", getParentModule()->getFullName(), addressToNodeName(rreq->getOriginatorAddr()), addressToNodeName(rreq->getOriginatorAddr()), addressToNodeName(rreq->getDestAddr()),
+                        std::to_string(rreq->getRreqId()), std::to_string(rrep->getHopCount()), "255", "", "",
+                        "intermediate_reply", std::to_string(localCbr), std::to_string(activeLowThreshold), std::to_string(activeHighThreshold),
+                        destRoute != nullptr ? addressToNodeName(destRoute->getNextHopAsGeneric()) : "", reverseRoute != nullptr ? addressToNodeName(reverseRoute->getNextHopAsGeneric()) : "");
             sendRREP(rrep, rreq->getOriginatorAddr(), 255, intermediateRrepDelay);
 
             if (rreq->getGratuitousRREPFlag()) {
@@ -2725,6 +3253,9 @@ void Aodv::handleRREQ(const Ptr<Rreq>& rreq, const L3Address& sourceAddr, unsign
             metricsRelayParticipationCount++;
         auto activeRange = getActiveCbrThresholdRange();
         logCbrRrepDecision(rreq, sourceAddr, getLocalCbr(), "forward_only", activeRange.first, activeRange.second);
+        // Ground-truth discovery event: RREQ forwarded to next branch.
+        logGroundTruthDiscoveryEvent("RREQ_FORWARDED", rreq->getOriginatorAddr(), rreq->getDestAddr(), rreq->getRreqId(),
+                sourceAddr, rreq->getHopCount(), -1, "forward_only_branch");
         forwardRREQ(outgoingRREQ, timeToLive);
     }
     else {
@@ -2800,6 +3331,15 @@ void Aodv::receiveSignal(cComponent *source, simsignal_t signalID, cObject *obj,
             }
         }
     }
+    else if (signalID == packetReceivedFromPeerSignal) {
+        auto *packet = dynamic_cast<Packet *>(obj);
+        if (packet == nullptr)
+            return;
+
+        auto macHeader = packet->peekAtFront<ieee80211::Ieee80211MacHeader>();
+        if (macHeader != nullptr && macHeader->getType() == ieee80211::ST_ACK)
+            inputMacAckReceivedCount++;
+    }
 }
 
 void Aodv::handleLinkBreakSendRERR(const L3Address& unreachableAddr)
@@ -2862,6 +3402,11 @@ void Aodv::handleLinkBreakSendRERR(const L3Address& unreachableAddr)
             routeData->setLifeTime(simTime() + deletePeriod);
             diagnosisRouteInvalidateCount++;
             logRouteCauseEvent("ROUTE_INVALIDATE", route->getDestinationAsGeneric(), route->getNextHopAsGeneric(), route->getMetric(), false, routeData->getLifeTime(), "local_link_break");
+            simtime_t routeFormedTime = findRouteFormationTime(route->getDestinationAsGeneric(), route->getNextHopAsGeneric());
+            simtime_t routeAge = routeFormedTime > SIMTIME_ZERO ? simTime() - routeFormedTime : SIMTIME_ZERO;
+            logGroundTruthMaintenanceEvent("ROUTE_INVALIDATE", route->getDestinationAsGeneric(), route->getNextHopAsGeneric(), route->getMetric(),
+                    false, routeData->getLifeTime(), "local_link_break", "link_break_before_rerr",
+                    routeFormedTime, routeAge, deletePeriod, deletePeriod, 0, 0);
             scheduleExpungeRoutes();
 
             UnreachableNode node;
@@ -2904,6 +3449,9 @@ void Aodv::handleLinkBreakSendRERR(const L3Address& unreachableAddr)
     logOriginatedRerr("LOCAL_LINK_BREAK", unreachableNodes, precursorNodes);
     diagnosisRerrOriginatedCount++;
     logRouteCauseEvent("RERR_ORIGINATED", unreachableAddr, L3Address(), 0, false, SIMTIME_ZERO, "local_link_break");
+    logGroundTruthMaintenanceEvent("RERR_ORIGINATED", unreachableAddr, L3Address(), 0, false, SIMTIME_ZERO,
+            "local_link_break", precursorNodes.empty() ? "originated_after_local_link_break_without_precursor" : "originated_after_local_link_break",
+            SIMTIME_ZERO, SIMTIME_ZERO, SIMTIME_ZERO, deletePeriod, precursorNodes.size(), unreachableNodes.size());
     auto rerr = createRERR(unreachableNodes);
     rerrCount++;
 
@@ -2938,6 +3486,54 @@ void Aodv::appendAodvMetric(const std::string& fileName, const std::string& line
         return;
     std::ofstream logFile(pwd + "/" + fileName, std::ios::app);
     logFile << line << endl;
+}
+
+void Aodv::ensureAodvControlLogFile() const
+{
+    if (!aodvControlLogEnabled || pwd.empty())
+        return;
+
+    std::filesystem::create_directories(pwd);
+    std::string filePath = pwd + "/aodv_control_log.csv";
+    ensureCsvSchemaHeader(filePath, "time,node,event,source,target,originator,destination,rreqId,hopCount,ttl,retryCount,jitter,replyType,localCbr,appliedLowThreshold,appliedHighThreshold,destRouteNextHop,reverseRouteNextHop,packetSource,packetDestination,selfAddress,rawOriginatorIp,rawDestinationIp,resolvedOriginatorNode,resolvedDestinationNode,isSelfOriginatedDatagram");
+}
+
+void Aodv::logAodvControlEvent(const std::string& event, const std::string& source, const std::string& target, const std::string& originator, const std::string& destination, const std::string& rreqId, const std::string& hopCount, const std::string& ttl, const std::string& retryCount, const std::string& jitter, const std::string& replyType, const std::string& localCbr, const std::string& appliedLowThreshold, const std::string& appliedHighThreshold, const std::string& destRouteNextHop, const std::string& reverseRouteNextHop, const std::string& packetSource, const std::string& packetDestination, const std::string& rawOriginatorIp, const std::string& rawDestinationIp, const std::string& resolvedOriginatorNode, const std::string& resolvedDestinationNode, const std::string& isSelfOriginatedDatagram) const
+{
+    if (!aodvControlLogEnabled || pwd.empty())
+        return;
+
+    ensureAodvControlLogFile();
+    std::ofstream out(pwd + "/aodv_control_log.csv", std::ios::app);
+    if (!out.is_open())
+        return;
+
+    out << simTime() << ","
+        << getParentModule()->getFullName() << ","
+        << event << ","
+        << source << ","
+        << target << ","
+        << originator << ","
+        << destination << ","
+        << rreqId << ","
+        << hopCount << ","
+        << ttl << ","
+        << retryCount << ","
+        << jitter << ","
+        << replyType << ","
+        << localCbr << ","
+        << appliedLowThreshold << ","
+        << appliedHighThreshold << ","
+        << destRouteNextHop << ","
+        << reverseRouteNextHop << ","
+        << packetSource << ","
+        << packetDestination << ","
+        << getSelfIPAddress() << ","
+        << rawOriginatorIp << ","
+        << rawDestinationIp << ","
+        << resolvedOriginatorNode << ","
+        << resolvedDestinationNode << ","
+        << isSelfOriginatedDatagram << "\n";
 }
 
 void Aodv::logPrecursorAddition(const char *reason, const L3Address& routeDest, const L3Address& precursor, const std::set<L3Address>& precursorList) const // @suppress("Member declaration not found")
@@ -3100,6 +3696,7 @@ void Aodv::logOriginatedRerr(const char *reason, const std::vector<UnreachableNo
 void Aodv::handleRERR(const Ptr<const Rerr>& rerr, const L3Address& sourceAddr)
 {
     EV_INFO << "AODV Route Error arrived with source addr: " << sourceAddr << endl;
+    inputRerrReceivedCount++;
     /*
     appendAodvMetric("aodv_control_log.txt",
             "time=" + simTime().str() +
@@ -3137,6 +3734,11 @@ void Aodv::handleRERR(const Ptr<const Rerr>& rerr, const L3Address& sourceAddr)
                     routeData->setLifeTime(simTime() + deletePeriod);
                     diagnosisRouteInvalidateCount++;
                     logRouteCauseEvent("ROUTE_INVALIDATE", route->getDestinationAsGeneric(), route->getNextHopAsGeneric(), route->getMetric(), false, routeData->getLifeTime(), "received_rerr");
+                    simtime_t routeFormedTime = findRouteFormationTime(route->getDestinationAsGeneric(), route->getNextHopAsGeneric());
+                    simtime_t routeAge = routeFormedTime > SIMTIME_ZERO ? simTime() - routeFormedTime : SIMTIME_ZERO;
+                    logGroundTruthMaintenanceEvent("ROUTE_INVALIDATE", route->getDestinationAsGeneric(), route->getNextHopAsGeneric(), route->getMetric(),
+                            false, routeData->getLifeTime(), "received_rerr", "invalidated_by_incoming_rerr",
+                            routeFormedTime, routeAge, deletePeriod, deletePeriod, 0, 0);
 
                     // The RERR should contain those destinations that are part of
                     // the created list of unreachable destinations and have a non-empty
@@ -3169,6 +3771,9 @@ void Aodv::handleRERR(const Ptr<const Rerr>& rerr, const L3Address& sourceAddr)
         logOriginatedRerr("FORWARDED_RERR", unreachableNeighbors, precursorNodes);
         diagnosisRerrOriginatedCount++;
         logRouteCauseEvent("RERR_ORIGINATED", sourceAddr, L3Address(), 0, false, SIMTIME_ZERO, "forwarded_rerr");
+        logGroundTruthMaintenanceEvent("RERR_ORIGINATED", sourceAddr, L3Address(), 0, false, SIMTIME_ZERO,
+                "forwarded_rerr", "originated_after_received_rerr",
+                SIMTIME_ZERO, SIMTIME_ZERO, SIMTIME_ZERO, deletePeriod, precursorNodes.size(), unreachableNeighbors.size());
         auto newRERR = createRERR(unreachableNeighbors);
         sendAODVPacket(newRERR, addressType->getBroadcastAddress(), 1, 0);
         rerrCount++;
@@ -3228,6 +3833,10 @@ void Aodv::clearState()
     metricsRouteDiscoveryDelayCount = 0;
     metricsRouteDiscoveryStartTimes.clear();
     metricsRouteDiscoveryCandidateCounts.clear();
+    acceptedRreqRecords.clear();
+    sourceDiscoveryRecords.clear();
+    pendingSourceDiscoveryRecords.clear();
+    routeFirstFormedTimes.clear();
     cbrBasedRandomThresholdEpoch = -1;
     cbrBasedRandomActiveLowThreshold = 0;
     cbrBasedRandomActiveHighThreshold = 0;
@@ -3275,6 +3884,14 @@ void Aodv::handleWaitForRREP(WaitForRrep *rrepTimer)
 
     ASSERT(containsKey(addressToRreqRetries, destAddr));
     if (addressToRreqRetries[destAddr] == rreqRetries) {
+        auto sourceDiscoveryIt = sourceDiscoveryRecords.find(destAddr);
+        unsigned int sourceRreqId = sourceDiscoveryIt != sourceDiscoveryRecords.end() ? sourceDiscoveryIt->second.rreqId : 0;
+        simtime_t sourceStartTime = sourceDiscoveryIt != sourceDiscoveryRecords.end() ? sourceDiscoveryIt->second.startTime : SIMTIME_ZERO;
+        logGroundTruthDiscoveryEvent("RREP_TIMEOUT_SOURCE", getSelfIPAddress(), destAddr, 0,
+                L3Address(), 0, 0, "route_discovery_failed_at_source",
+                sourceRreqId, SIMTIME_ZERO, sourceStartTime,
+                sourceStartTime > SIMTIME_ZERO ? simTime() - sourceStartTime : SIMTIME_ZERO,
+                addressToRreqRetries[destAddr]);
         if (cbrRrepMetricsEnabled) {
             metricsRouteDiscoveryFailedCount++;
             auto candidateIt = metricsRouteDiscoveryCandidateCounts.find(destAddr);
@@ -3301,6 +3918,14 @@ void Aodv::handleWaitForRREP(WaitForRrep *rrepTimer)
 void Aodv::forwardRREP(const Ptr<Rrep>& rrep, const L3Address& destAddr, unsigned int timeToLive)
 {
     EV_INFO << "Forwarding the Route Reply to the node " << rrep->getOriginatorAddr() << " which originated the Route Request" << endl;
+    if (aodvControlLogEnabled) {
+        unsigned int matchedRreqId = 0;
+        simtime_t pairedAcceptedTime = SIMTIME_ZERO;
+        bool hasMatchedAcceptedRreq = findAcceptedRreqForRrep(rrep->getOriginatorAddr(), rrep->getDestAddr(), matchedRreqId, pairedAcceptedTime);
+        logAodvControlEvent("RREP_FORWARD", getParentModule()->getFullName(), addressToNodeName(destAddr), addressToNodeName(rrep->getOriginatorAddr()), addressToNodeName(rrep->getDestAddr()),
+                hasMatchedAcceptedRreq ? std::to_string(matchedRreqId) : "", std::to_string(rrep->getHopCount()), std::to_string(timeToLive), "", "",
+                hasMatchedAcceptedRreq ? "matched_local_rreq" : "unmatched_local_rreq", std::to_string(getLocalCbr()), "", "", "", "");
+    }
 
     // RFC 5148:
     // When a node forwards a message, it SHOULD be jittered by delaying it
@@ -3312,6 +3937,10 @@ void Aodv::forwardRREP(const Ptr<Rrep>& rrep, const L3Address& destAddr, unsigne
 void Aodv::forwardRREQ(const Ptr<Rreq>& rreq, unsigned int timeToLive)
 {
     EV_INFO << "Forwarding the Route Request message with TTL= " << timeToLive << endl;
+    if (aodvControlLogEnabled)
+        logAodvControlEvent("RREQ_FORWARD", getParentModule()->getFullName(), addressType->getBroadcastAddress().str(), addressToNodeName(rreq->getOriginatorAddr()), addressToNodeName(rreq->getDestAddr()),
+                std::to_string(rreq->getRreqId()), std::to_string(rreq->getHopCount()), std::to_string(timeToLive), "", "",
+                "", std::to_string(getLocalCbr()), "", "", "", "");
     sendAODVPacket(rreq, addressType->getBroadcastAddress(), timeToLive, *jitterPar);
 }
 
@@ -3319,6 +3948,14 @@ void Aodv::completeRouteDiscovery(const L3Address& target)
 {
     EV_DETAIL << "Completing route discovery, originator " << getSelfIPAddress() << ", target " << target << endl;
     ASSERT(hasOngoingRouteDiscovery(target));
+    auto sourceDiscoveryIt = sourceDiscoveryRecords.find(target);
+    unsigned int sourceRreqId = sourceDiscoveryIt != sourceDiscoveryRecords.end() ? sourceDiscoveryIt->second.rreqId : 0;
+    simtime_t sourceStartTime = sourceDiscoveryIt != sourceDiscoveryRecords.end() ? sourceDiscoveryIt->second.startTime : SIMTIME_ZERO;
+    logGroundTruthDiscoveryEvent("ROUTE_DISCOVERY_SUCCESS_SOURCE", getSelfIPAddress(), target, 0,
+            L3Address(), 0, 1, "source_completed_route_discovery",
+            sourceRreqId, SIMTIME_ZERO, sourceStartTime,
+            sourceStartTime > SIMTIME_ZERO ? simTime() - sourceStartTime : SIMTIME_ZERO,
+            containsKey(addressToRreqRetries, target) ? addressToRreqRetries[target] : 0);
     if (cbrRrepMetricsEnabled) {
         metricsRouteDiscoverySucceededCount++;
         auto startIt = metricsRouteDiscoveryStartTimes.find(target);
@@ -3365,6 +4002,7 @@ void Aodv::completeRouteDiscovery(const L3Address& target)
     ASSERT(waitRREPIter != waitForRREPTimers.end());
     cancelAndDelete(waitRREPIter->second);
     waitForRREPTimers.erase(waitRREPIter);
+    sourceDiscoveryRecords.erase(target);
 }
 
 void Aodv::sendGRREP(const Ptr<Rrep>& grrep, const L3Address& destAddr, unsigned int timeToLive)
@@ -3502,6 +4140,11 @@ void Aodv::expungeRoutes()
                     routeData->setLifeTime(simTime() + deletePeriod);
                     diagnosisRouteExpireInactiveCount++;
                     logRouteCauseEvent("ROUTE_EXPIRE_INACTIVE", route->getDestinationAsGeneric(), route->getNextHopAsGeneric(), route->getMetric(), false, routeData->getLifeTime(), "expungeRoutes");
+                    simtime_t routeFormedTime = findRouteFormationTime(route->getDestinationAsGeneric(), route->getNextHopAsGeneric());
+                    simtime_t routeAge = routeFormedTime > SIMTIME_ZERO ? simTime() - routeFormedTime : SIMTIME_ZERO;
+                    logGroundTruthMaintenanceEvent("ROUTE_EXPIRE_INACTIVE", route->getDestinationAsGeneric(), route->getNextHopAsGeneric(), route->getMetric(),
+                            false, routeData->getLifeTime(), "expungeRoutes", "active_route_expired_to_invalid",
+                            routeFormedTime, routeAge, deletePeriod, activeRouteTimeout, 0, 0);
                     routingTableChanged = true;
                 }
                 else {
@@ -3520,6 +4163,12 @@ void Aodv::expungeRoutes()
                                 ", event=ROUTE_DELETED, destination=" + route->getDestinationAsGeneric().str() +
                                 ", nextHop=" + route->getNextHopAsGeneric().str());*/
                         logRouteCauseEvent("ROUTE_DELETE", route->getDestinationAsGeneric(), route->getNextHopAsGeneric(), route->getMetric(), false, routeData->getLifeTime(), "expungeRoutes");
+                        simtime_t routeFormedTime = findRouteFormationTime(route->getDestinationAsGeneric(), route->getNextHopAsGeneric());
+                        simtime_t routeAge = routeFormedTime > SIMTIME_ZERO ? simTime() - routeFormedTime : SIMTIME_ZERO;
+                        logGroundTruthMaintenanceEvent("ROUTE_DELETE", route->getDestinationAsGeneric(), route->getNextHopAsGeneric(), route->getMetric(),
+                                false, routeData->getLifeTime(), "expungeRoutes", "invalid_route_deleted_after_delete_period",
+                                routeFormedTime, routeAge, SIMTIME_ZERO, deletePeriod, 0, 0);
+                        eraseRouteFormation(route->getDestinationAsGeneric(), route->getNextHopAsGeneric());
                         diagnosisRouteDeleteCount++;
                         routingTable->deleteRoute(route);
                         routingTableChanged = true;
@@ -3668,6 +4317,9 @@ void Aodv::sendRERRWhenNoRouteToForward(const L3Address& unreachableAddr)
     logOriginatedRerr("NO_ROUTE_TO_FORWARD", unreachableNodes, precursorNodes);
     diagnosisRerrOriginatedCount++;
     logRouteCauseEvent("RERR_ORIGINATED", unreachableAddr, L3Address(), 0, false, SIMTIME_ZERO, "no_route_to_forward");
+    logGroundTruthMaintenanceEvent("RERR_ORIGINATED", unreachableAddr, L3Address(), 0, false, SIMTIME_ZERO,
+            "no_route_to_forward", precursorNodes.empty() ? "originated_without_forward_route_and_without_precursor" : "originated_without_forward_route",
+            SIMTIME_ZERO, SIMTIME_ZERO, SIMTIME_ZERO, deletePeriod, precursorNodes.size(), unreachableNodes.size());
     auto rerr = createRERR(unreachableNodes);
 
     rerrCount++;
@@ -3691,6 +4343,7 @@ void Aodv::cancelRouteDiscovery(const L3Address& destAddr)
     ASSERT(waitRREPIter != waitForRREPTimers.end());
     cancelAndDelete(waitRREPIter->second);
     waitForRREPTimers.erase(waitRREPIter);
+    sourceDiscoveryRecords.erase(destAddr);
 }
 
 bool Aodv::updateValidRouteLifeTime(const L3Address& destAddr, simtime_t lifetime)
@@ -3723,6 +4376,7 @@ void Aodv::sendRREPACK(const Ptr<RrepAck>& rrepACK, const L3Address& destAddr)
 
 void Aodv::handleRREPACK(const Ptr<const RrepAck>& rrepACK, const L3Address& neighborAddr)
 {
+    inputRrepAckReceivedCount++;
     // Note that the RREP-ACK packet does not contain any information about
     // which RREP it is acknowledging.  The time at which the RREP-ACK is
     // received will likely come just after the time when the RREP was sent

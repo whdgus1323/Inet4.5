@@ -129,9 +129,13 @@ simple Aodv like IApp
         double cbrBasedRrepHighDelay @unit(s) = default(10ms);
         bool cbrRrepMetricsEnabled = default(false);
         bool cbrRrepDecisionLogEnabled = default(false);
+        bool aodvControlLogEnabled = default(false);
         bool dlDirectThresholdRrepDebugLogEnabled = default(false);
         bool cbrRouteCauseLogEnabled = default(false);
         bool transmissionFailureDiagnosisLogEnabled = default(false);
+        bool radioStateDiagnosisLogEnabled = default(false);
+        bool groundTruthDatasetLogEnabled = default(true);
+        bool inputDatasetLogEnabled = default(false);
         bool useBdStationCount = default(false);
         string networkProtocolModule = default("^.ipv4.ip");
         bool askGratuitousRREP = default(false); // see RFC 3561: 6.6.3

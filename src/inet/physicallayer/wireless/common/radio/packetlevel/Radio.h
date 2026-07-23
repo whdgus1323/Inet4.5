@@ -242,6 +242,8 @@ class INET_API Radio : public PhysicalLayerBase, public virtual IRadio
     virtual const ITransmission *getTransmissionInProgress() const override;
     virtual const ITransmission *getReceptionInProgress() const override;
     virtual double getCurrentCbr();
+    virtual bool isTransmissionTimerScheduledForDiagnostics() const { return transmissionTimer != nullptr && transmissionTimer->isScheduled(); }
+    virtual bool isReceptionTimerScheduledForDiagnostics() const { return receptionTimer != nullptr && receptionTimer->isScheduled(); }
 
     virtual IRadioSignal::SignalPart getTransmittedSignalPart() const override;
     virtual IRadioSignal::SignalPart getReceivedSignalPart() const override;
