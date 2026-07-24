@@ -589,6 +589,9 @@ INetfilter::IHook::Result Aodv::ensureRouteForDatagram(Packet *datagram)
                         routeFormedTime, routeAge, remainingLifetime, activeRouteTimeout, 0, 0);
             }
 
+            if (!isSelfOriginated)
+                return ACCEPT;
+
             delayDatagram(datagram);
 
             if (!hasOngoingRouteDiscovery(destAddr)) {
