@@ -10,8 +10,10 @@
 #include "inet/linklayer/ieee80211/mac/ngv/NgvRadioEnvironmentReqTag_m.h"
 
 #include <string>
+#include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <sstream>
 
 #include "inet/applications/pingapp/PingApp_m.h"
 #include "inet/common/ModuleAccess.h"
@@ -27,11 +29,13 @@
 #include "inet/networklayer/common/L3AddressResolver.h"
 #include "inet/networklayer/common/L3AddressTag_m.h"
 #include "inet/networklayer/common/NetworkInterface.h"
+#include "inet/networklayer/contract/IRoutingTable.h"
 #include "inet/networklayer/contract/IInterfaceTable.h"
 #include "inet/networklayer/contract/IL3AddressType.h"
 #include "inet/networklayer/contract/L3Socket.h"
 #include "inet/networklayer/contract/ipv4/Ipv4Socket.h"
 #include "inet/networklayer/contract/ipv6/Ipv6Socket.h"
+#include "inet/networklayer/ipv4/IIpv4RoutingTable.h"
 
 #ifdef INET_WITH_IPv4
 #include "inet/networklayer/ipv4/Icmp.h"
@@ -50,6 +54,25 @@
 namespace inet {
 
 using std::cout;
+
+namespace {
+
+std::string csvEscape(const std::string& value)
+{
+    if (value.find_first_of(",\"\n\r") == std::string::npos)
+        return value;
+    std::string escaped = "\"";
+    for (char ch : value) {
+        if (ch == '"')
+            escaped += "\"\"";
+        else
+            escaped += ch;
+    }
+    escaped += "\"";
+    return escaped;
+}
+
+}
 
 Define_Module(PingApp);
 
@@ -551,6 +574,7 @@ void PingApp::sendPingRequest()
     // store the sending time in a circular buffer so we can compute RTT when the packet returns
     sendTimeHistory[sendSeqNo % PING_HISTORY_SIZE] = simTime();
     pongReceived[sendSeqNo % PING_HISTORY_SIZE] = false;
+    logPingTraceEvent("send", sendSeqNo, destAddr, SIMTIME_ZERO, false, "request_sent");
     emit(pingTxSeqSignal, sendSeqNo);
 
     /*
@@ -614,11 +638,12 @@ void PingApp::processPingResponse(int originatorId, int seqNo, Packet *packet)
         lastRerrTime = simTime().dbl();
     }
 
-    countPingResponse(B(pingPayload->getChunkLength()).get(), seqNo, rtt, isDup);
+    countPingResponse(B(pingPayload->getChunkLength()).get(), seqNo, rtt, isDup, src);
 }
 
-void PingApp::countPingResponse(int bytes, long seqNo, simtime_t rtt, bool isDup)
+void PingApp::countPingResponse(int bytes, long seqNo, simtime_t rtt, bool isDup, const L3Address& peerAddr)
 {
+    logPingTraceEvent("reply", seqNo, peerAddr, rtt, isDup, isDup ? "duplicate_reply" : "reply_received");
     EV_INFO << "Ping reply #" << seqNo << " arrived, rtt=" << (rtt == SIMTIME_ZERO ? "unknown" : rtt.str().c_str()) << (isDup ? ", duplicated" : "") << "\n";
     emit(pingRxSeqSignal, seqNo);
 
@@ -643,6 +668,11 @@ void PingApp::countPingResponse(int bytes, long seqNo, simtime_t rtt, bool isDup
         // jump in the sequence: count pings in gap as lost for now
         // (if they arrive later, we'll decrement back the loss counter)
         long jump = seqNo - expectedReplySeqNo;
+        for (long missingSeq = expectedReplySeqNo; missingSeq < seqNo; missingSeq++) {
+            std::ostringstream note;
+            note << "gap_before_reply_" << seqNo;
+            logPingTraceEvent("gap_inferred_loss", missingSeq, destAddr, SIMTIME_ZERO, false, note.str().c_str());
+        }
         lossCount += jump;
         emit(numLostSignal, lossCount);
 
@@ -655,10 +685,72 @@ void PingApp::countPingResponse(int bytes, long seqNo, simtime_t rtt, bool isDup
         outOfOrderArrivalCount++;
         if (!isDup && rtt > SIMTIME_ZERO)
             lossCount--;
+        logPingTraceEvent("late_reply", seqNo, peerAddr, rtt, isDup, "reply_arrived_after_gap_loss");
         emit(numOutOfOrderArrivalsSignal, outOfOrderArrivalCount);
         emit(numLostSignal, lossCount);
     }
 
+}
+
+void PingApp::ensurePingTraceLogFile() const
+{
+    if (pwd.empty())
+        return;
+
+    std::filesystem::create_directories(pwd);
+    std::string filePath = pwd + "/ping_trace_log.csv";
+    bool writeHeader = !std::filesystem::exists(filePath) || std::filesystem::file_size(filePath) == 0;
+    if (!writeHeader)
+        return;
+
+    std::ofstream out(filePath, std::ios::app);
+    if (!out.is_open())
+        return;
+
+    out << "time,node,event,seqNo,src,dest,peer,rttMs,isDuplicate,expectedReplySeqNo,lossCount,sentCount,receivedCount,"
+           "routeFound,routeNextHop,routeMetric,routeSourceType,routeInterface,note\n";
+}
+
+void PingApp::logPingTraceEvent(const char *event, long seqNo, const L3Address& peerAddr, simtime_t rtt, bool isDup, const char *note) const
+{
+    if (pwd.empty())
+        return;
+
+    ensurePingTraceLogFile();
+    std::ofstream out(pwd + "/ping_trace_log.csv", std::ios::app);
+    if (!out.is_open())
+        return;
+
+    cModule *host = getContainingNode(this);
+    IRoutingTable *routingTable = nullptr;
+    if (host != nullptr && destAddr.getType() == L3Address::IPv4)
+        routingTable = dynamic_cast<IRoutingTable *>(L3AddressResolver().findIpv4RoutingTableOf(host));
+
+    IRoute *route = routingTable != nullptr ? routingTable->findBestMatchingRoute(destAddr) : nullptr;
+    std::string routeNextHop = route != nullptr ? route->getNextHopAsGeneric().str() : "";
+    int routeMetric = route != nullptr ? route->getMetric() : -1;
+    std::string routeSourceType = route != nullptr ? IRoute::sourceTypeName(route->getSourceType()) : "";
+    std::string routeInterface = (route != nullptr && route->getInterface() != nullptr) ? route->getInterface()->getInterfaceName() : "";
+
+    out << simTime() << ","
+        << csvEscape(getFullPath()) << ","
+        << csvEscape(event != nullptr ? event : "") << ","
+        << seqNo << ","
+        << csvEscape(srcAddr.str()) << ","
+        << csvEscape(destAddr.str()) << ","
+        << csvEscape(peerAddr.str()) << ","
+        << (rtt > SIMTIME_ZERO ? rtt.dbl() * 1000.0 : -1.0) << ","
+        << (isDup ? 1 : 0) << ","
+        << expectedReplySeqNo << ","
+        << lossCount << ","
+        << sentCount << ","
+        << numPongs << ","
+        << (route != nullptr ? 1 : 0) << ","
+        << csvEscape(routeNextHop) << ","
+        << routeMetric << ","
+        << csvEscape(routeSourceType) << ","
+        << csvEscape(routeInterface) << ","
+        << csvEscape(note != nullptr ? note : "") << "\n";
 }
 
 std::vector<L3Address> PingApp::getAllAddresses()
@@ -706,6 +798,8 @@ void PingApp::finish()
         return;
     }
 
+    for (long unresolvedSeq = expectedReplySeqNo; unresolvedSeq < sendSeqNo; unresolvedSeq++)
+        logPingTraceEvent("finish_unresolved_loss", unresolvedSeq, destAddr, SIMTIME_ZERO, false, "no_reply_before_finish");
     lossCount += sendSeqNo - expectedReplySeqNo;
 
     recordScalar("Pings sent", sendSeqNo);

@@ -100,7 +100,9 @@ class INET_API PingApp : public ApplicationBase, public INetworkSocket::ICallbac
     virtual std::vector<L3Address> getAllAddresses();
     virtual void sendPingRequest();
     virtual void processPingResponse(int identifier, int seqNumber, Packet *packet);
-    virtual void countPingResponse(int bytes, long seqNo, simtime_t rtt, bool isDup);
+    virtual void countPingResponse(int bytes, long seqNo, simtime_t rtt, bool isDup, const L3Address& peerAddr);
+    virtual void ensurePingTraceLogFile() const;
+    virtual void logPingTraceEvent(const char *event, long seqNo, const L3Address& peerAddr, simtime_t rtt, bool isDup, const char *note) const;
 
     // Lifecycle methods
     virtual void handleStartOperation(LifecycleOperation *operation) override;
