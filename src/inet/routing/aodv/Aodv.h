@@ -145,7 +145,7 @@ class INET_API Aodv : public RoutingProtocolBase, public NetfilterBase::HookBase
       bool cbrBasedRrepEnabled = false;
       int cbrBasedRrepThreshold = 0;
       std::string cbrBasedRrepCompareMode;
-      bool cbrBasedRrepRangeEnabled = false;
+        bool cbrBasedRrepRangeEnabled = false;
       int cbrBasedRrepLowThreshold = 0;
       int cbrBasedRrepHighThresholdForRange = 0;
       bool cbrBasedRandomThresholdEnabled = false;

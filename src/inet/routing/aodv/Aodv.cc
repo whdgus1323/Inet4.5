@@ -589,7 +589,7 @@ INetfilter::IHook::Result Aodv::ensureRouteForDatagram(Packet *datagram)
                         routeFormedTime, routeAge, remainingLifetime, activeRouteTimeout, 0, 0);
             }
 
-            if (!isSelfOriginated)
+            if (cbrBasedRrepRangeEnabled && !isSelfOriginated)
                 return ACCEPT;
 
             delayDatagram(datagram);
@@ -2064,6 +2064,17 @@ void Aodv::handleRREP(const Ptr<Rrep>& rrep, const L3Address& sourceAddr)
                         << "destRoute=" << (destRoute != nullptr)
                         << ", destRouteData=" << (destRouteData != nullptr)
                         << ", originatorRouteData=" << (originatorRouteData != nullptr) << endl;
+                return;
+            }
+
+            if (cbrBasedRrepRangeEnabled && originatorRoute->getNextHopAsGeneric() == sourceAddr) {
+                EV_WARN << "Dropping RREP because forwarding it would send it back to the previous hop "
+                        << sourceAddr << " for originator " << rrep->getOriginatorAddr() << endl;
+                if (aodvControlLogEnabled)
+                    logAodvControlEvent("RREP_DROP", getParentModule()->getFullName(), addressToNodeName(sourceAddr),
+                            addressToNodeName(rrep->getOriginatorAddr()), addressToNodeName(rrep->getDestAddr()),
+                            hasMatchedAcceptedRreq ? std::to_string(matchedRreqId) : "", std::to_string(rrep->getHopCount()), "", "", "",
+                            "bounce_back_previous_hop", std::to_string(getLocalCbr()), "", "", "", "");
                 return;
             }
 
