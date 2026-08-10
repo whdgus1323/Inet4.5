@@ -44,6 +44,9 @@ simple Aodv like IApp
         int cbrBasedRrepThreshold = default(10);
         string cbrBasedRrepCompareMode = default("low");
         bool cbrBasedRrepRangeEnabled = default(false);
+        bool cbrBasedRreqRangeEnabled = default(false);
+        bool cbrBasedRrepRangeFollowupRreqSuppressionEnabled = default(false);
+        bool cbrBasedRrepDirectDestinationOnlyEnabled = default(false);
         int cbrBasedRrepLowThreshold = default(10);
         int cbrBasedRrepHighThresholdForRange = default(60);
         bool cbrBasedRandomThresholdEnabled = default(false);

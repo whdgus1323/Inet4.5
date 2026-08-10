@@ -143,11 +143,14 @@ class INET_API Aodv : public RoutingProtocolBase, public NetfilterBase::HookBase
     bool enableRoutingTableSnapshotLog = false;
       bool enableSummary1sLog = false;
       bool cbrBasedRrepEnabled = false;
-      int cbrBasedRrepThreshold = 0;
-      std::string cbrBasedRrepCompareMode;
+        int cbrBasedRrepThreshold = 0;
+        std::string cbrBasedRrepCompareMode;
         bool cbrBasedRrepRangeEnabled = false;
-      int cbrBasedRrepLowThreshold = 0;
-      int cbrBasedRrepHighThresholdForRange = 0;
+        bool cbrBasedRreqRangeEnabled = false;
+        bool cbrBasedRrepRangeFollowupRreqSuppressionEnabled = false;
+        bool cbrBasedRrepDirectDestinationOnlyEnabled = false;
+        int cbrBasedRrepLowThreshold = 0;
+        int cbrBasedRrepHighThresholdForRange = 0;
       bool cbrBasedRandomThresholdEnabled = false;
       simtime_t cbrBasedRandomThresholdUpdateInterval;
       double cbrBasedRandomLowMin = 0;
@@ -351,6 +354,7 @@ class INET_API Aodv : public RoutingProtocolBase, public NetfilterBase::HookBase
     std::map<RreqIdentifier, AcceptedRreqRecord, RreqIdentifierCompare> acceptedRreqRecords;
     std::map<L3Address, SourceDiscoveryRecord> sourceDiscoveryRecords;
     std::map<L3Address, SourceDiscoveryRecord> pendingSourceDiscoveryRecords;
+    std::map<L3Address, simtime_t> cbrRangeBlockedFollowupRreqSuppressionExpirations;
     std::map<RouteHistoryKey, simtime_t, RouteHistoryKeyCompare> routeFirstFormedTimes;
 
   protected:

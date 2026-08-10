@@ -268,6 +268,9 @@ void Aodv::initialize(int stage)
         cbrBasedRrepThreshold = par("cbrBasedRrepThreshold");
         cbrBasedRrepCompareMode = par("cbrBasedRrepCompareMode").stdstringValue();
         cbrBasedRrepRangeEnabled = par("cbrBasedRrepRangeEnabled");
+        cbrBasedRreqRangeEnabled = par("cbrBasedRreqRangeEnabled");
+        cbrBasedRrepRangeFollowupRreqSuppressionEnabled = par("cbrBasedRrepRangeFollowupRreqSuppressionEnabled");
+        cbrBasedRrepDirectDestinationOnlyEnabled = par("cbrBasedRrepDirectDestinationOnlyEnabled");
         cbrBasedRrepLowThreshold = par("cbrBasedRrepLowThreshold");
         cbrBasedRrepHighThresholdForRange = par("cbrBasedRrepHighThresholdForRange");
         cbrBasedRandomThresholdEnabled = par("cbrBasedRandomThresholdEnabled");
@@ -589,8 +592,28 @@ INetfilter::IHook::Result Aodv::ensureRouteForDatagram(Packet *datagram)
                         routeFormedTime, routeAge, remainingLifetime, activeRouteTimeout, 0, 0);
             }
 
-            if (cbrBasedRrepRangeEnabled && !isSelfOriginated)
+            if (!isSelfOriginated && cbrBasedRrepRangeFollowupRreqSuppressionEnabled) {
+                auto suppressionIt = cbrRangeBlockedFollowupRreqSuppressionExpirations.find(destAddr);
+                if (suppressionIt != cbrRangeBlockedFollowupRreqSuppressionExpirations.end()) {
+                    if (simTime() <= suppressionIt->second)
+                        return ACCEPT;
+                    cbrRangeBlockedFollowupRreqSuppressionExpirations.erase(suppressionIt);
+                }
+            }
+
+            auto activeRange = getActiveCbrThresholdRange();
+            double localCbr = getLocalCbr();
+            if (!isSelfOriginated && cbrBasedRreqRangeEnabled && !(activeRange.first < localCbr && localCbr < activeRange.second)) {
+                if (aodvControlLogEnabled)
+                    logAodvControlEvent("RREQ_START_RANGE_BLOCK", getParentModule()->getFullName(), addressType->getBroadcastAddress().str(), "", addressToNodeName(destAddr),
+                            "", "", "", "", "", "", std::to_string(localCbr), std::to_string(activeRange.first), std::to_string(activeRange.second),
+                            "", "", addressToNodeName(sourceAddr), addressToNodeName(destAddr), sourceAddr.str(), destAddr.str(),
+                            addressToNodeName(sourceAddr), addressToNodeName(destAddr), "0");
+                EV_INFO << "Skipping forwarded-datagram route discovery because local CBR " << localCbr
+                        << " is outside allowed range (" << activeRange.first
+                        << ", " << activeRange.second << ")" << endl;
                 return ACCEPT;
+            }
 
             delayDatagram(datagram);
 
@@ -1073,7 +1096,7 @@ void Aodv::loadDlBasedRrepParameters()
 
     if (cbrBasedRrepCompareMode != "low" && cbrBasedRrepCompareMode != "high")
         throw cRuntimeError("cbrBasedRrepCompareMode must be 'low' or 'high'");
-    if (cbrBasedRrepRangeEnabled && cbrBasedRrepLowThreshold >= cbrBasedRrepHighThresholdForRange)
+    if ((cbrBasedRrepRangeEnabled || cbrBasedRreqRangeEnabled) && cbrBasedRrepLowThreshold >= cbrBasedRrepHighThresholdForRange)
         throw cRuntimeError("cbrBasedRrepLowThreshold must be smaller than cbrBasedRrepHighThresholdForRange");
     if (cbrBasedRandomThresholdEnabled) {
         if (cbrBasedRandomThresholdUpdateInterval <= SIMTIME_ZERO)
@@ -3089,12 +3112,21 @@ void Aodv::handleRREQ(const Ptr<Rreq>& rreq, const L3Address& sourceAddr, unsign
             double activeHighThreshold = cbrBasedRrepHighThresholdForRange;
             bool blockedByCbrRange = isOutsideConfiguredCbrRange(localCbr, activeLowThreshold, activeHighThreshold);
             if (blockedByCbrRange && !(cbrBasedRrepDirectRouteBypassEnabled && isDirectRouteToDestination)) {
+                if (cbrBasedRrepRangeFollowupRreqSuppressionEnabled)
+                    cbrRangeBlockedFollowupRreqSuppressionExpirations[rreq->getDestAddr()] = simTime() + pathDiscoveryTime;
                 if (cbrRrepMetricsEnabled)
                     metricsRrepBlockedCount++;
                 logCbrRrepDecision(rreq, sourceAddr, localCbr, "range_blocked", activeLowThreshold, activeHighThreshold);
                 EV_INFO << "Skipping intermediate RREP because local CBR " << localCbr
                         << " is outside allowed range (" << activeLowThreshold
                         << ", " << activeHighThreshold << ")" << endl;
+                return;
+            }
+            if (cbrBasedRrepDirectDestinationOnlyEnabled && !isDirectRouteToDestination) {
+                if (cbrRrepMetricsEnabled)
+                    metricsRrepBlockedCount++;
+                logCbrRrepDecision(rreq, sourceAddr, localCbr, "non_direct_destination_blocked", activeLowThreshold, activeHighThreshold);
+                EV_INFO << "Skipping intermediate RREP because the destination route does not use the destination as the next hop" << endl;
                 return;
             }
             if (dlBucketBasedRrepEnabled) {
@@ -3850,6 +3882,7 @@ void Aodv::clearState()
     acceptedRreqRecords.clear();
     sourceDiscoveryRecords.clear();
     pendingSourceDiscoveryRecords.clear();
+    cbrRangeBlockedFollowupRreqSuppressionExpirations.clear();
     routeFirstFormedTimes.clear();
     cbrBasedRandomThresholdEpoch = -1;
     cbrBasedRandomActiveLowThreshold = 0;
