@@ -239,6 +239,8 @@ Define_Module(Aodv);
 
 const int KIND_DELAYEDSEND = 100;
 
+std::map<cSimulation *, Aodv::BufferedCsvRun> Aodv::bufferedCsvRuns;
+
 void Aodv::initialize(int stage)
 {
     if (stage == INITSTAGE_ROUTING_PROTOCOLS)
@@ -258,6 +260,8 @@ void Aodv::initialize(int stage)
         networkProtocol.reference(this, "networkProtocolModule", true);
         if (hasPar("pwd"))
             pwd = par("pwd").stdstringValue();
+        if (!pwd.empty())
+            registerBufferedCsvRun();
         enableRreqGraphLog = par("enableRreqGraphLog");
         enableRouteGraphLog = par("enableRouteGraphLog");
         enablePrecursorLog = par("enablePrecursorLog");
@@ -429,9 +433,13 @@ void Aodv::initialize(int stage)
         host->subscribe(linkBrokenSignal, this);
         host->subscribe(packetReceivedFromPeerSignal, this);
         usingIpv6 = (routingTable->getRouterIdAsGeneric().getType() == L3Address::IPv6);
-        if (cbrRrepDecisionLogEnabled)
-            ensureCbrRrepDecisionLogFile();
     }
+}
+
+void Aodv::finish()
+{
+    flushBufferedCsvLogs();
+    RoutingProtocolBase::finish();
 }
 
 void Aodv::handleMessageWhenUp(cMessage *msg)
@@ -2407,8 +2415,6 @@ void Aodv::logInputDataset1s()
         precursorSum += routeData->getPrecursorList().size();
     }
 
-    std::filesystem::create_directories(pwd);
-    std::string filePath = pwd + "/aodv_input_dataset_1s.csv";
     const std::string headerLine =
             "time,node,nodeIndex,externalId,localCbr,neighborCount,bdStationCount,vehicleSpeedKmh,"
             "networkNodeCount,"
@@ -2417,11 +2423,7 @@ void Aodv::logInputDataset1s()
             "rrepCandidateCount,rrepAllowedCount,rrepBlockedCount,routeDiscoveryStartedCount,"
             "routeDiscoverySucceededCount,routeDiscoveryFailedCount,managedRouteCount,activeRouteCount,"
             "precursorSum,dataRouteUseCount,dataRouteMissCount,rerrGeneratedCount,rerrUnreachableSum,rerrPrecursorSum";
-    ensureCsvSchemaHeader(filePath, headerLine);
-    std::ofstream out(filePath, std::ios::app);
-    if (!out.is_open())
-        return;
-
+    std::ostringstream out;
     out << simTime() << ","
         << getParentModule()->getFullName() << ","
         << nodeIndex << ","
@@ -2459,6 +2461,8 @@ void Aodv::logInputDataset1s()
         << summaryRerrUnreachableSum << ","
         << summaryRerrPrecursorSum << "\n";
 
+    appendBufferedCsvLine("aodv_input_dataset_1s.csv", headerLine, out.str());
+
     inputRreqReceivedCount = 0;
     inputRrepReceivedCount = 0;
     inputRerrReceivedCount = 0;
@@ -2489,21 +2493,13 @@ void Aodv::logCbrRrepMetrics1s()
     double routeCandidateAvg = metricsRouteCandidateCountCount > 0 ? (double)metricsRouteCandidateCountSum / metricsRouteCandidateCountCount : 0.0;
     double selectedHopAvg = metricsSelectedRouteHopCountCount > 0 ? (double)metricsSelectedRouteHopCountSum / metricsSelectedRouteHopCountCount : 0.0;
 
-    std::filesystem::create_directories(pwd);
-    std::string filePath = pwd + "/aodv_cbr_rrep_metrics_1s.csv";
-    bool writeHeader = !std::filesystem::exists(filePath) || std::filesystem::file_size(filePath) == 0;
-    std::ofstream out(filePath, std::ios::app);
-    if (!out.is_open())
-        return;
-
-    if (writeHeader) {
-        out << "time,node,nodeIndex,externalId,localCbr,neighborCount,appliedLowThreshold,appliedHighThreshold,"
-               "rreqReceived,rrepCandidates,rrepAllowed,rrepBlocked,rrepBlockRate,"
-               "routeDiscoveryStarted,routeDiscoverySucceeded,routeDiscoveryFailed,"
-               "routeDiscoveryDelayAvgMs,rrepReceived,routeCandidateAvg,"
-               "selectedRouteHopAvg,relayParticipation\n";
-    }
-
+    const std::string headerLine =
+            "time,node,nodeIndex,externalId,localCbr,neighborCount,appliedLowThreshold,appliedHighThreshold,"
+            "rreqReceived,rrepCandidates,rrepAllowed,rrepBlocked,rrepBlockRate,"
+            "routeDiscoveryStarted,routeDiscoverySucceeded,routeDiscoveryFailed,"
+            "routeDiscoveryDelayAvgMs,rrepReceived,routeCandidateAvg,"
+            "selectedRouteHopAvg,relayParticipation";
+    std::ostringstream out;
     out << simTime() << ","
         << getParentModule()->getFullName() << ","
         << nodeIndex << ","
@@ -2525,6 +2521,8 @@ void Aodv::logCbrRrepMetrics1s()
         << routeCandidateAvg << ","
         << selectedHopAvg << ","
         << metricsRelayParticipationCount << "\n";
+
+    appendBufferedCsvLine("aodv_cbr_rrep_metrics_1s.csv", headerLine, out.str());
 
     metricsRreqReceivedCount = 0;
     metricsRrepCandidateCount = 0;
@@ -2548,27 +2546,19 @@ void Aodv::logTransmissionFailureDiagnosis1s()
     if (!transmissionFailureDiagnosisLogEnabled || pwd.empty())
         return;
 
-    std::filesystem::create_directories(pwd);
-    std::string filePath = pwd + "/aodv_transmission_failure_diagnosis_1s.csv";
-    bool writeHeader = !std::filesystem::exists(filePath) || std::filesystem::file_size(filePath) == 0;
-    std::ofstream out(filePath, std::ios::app);
-    if (!out.is_open())
-        return;
-
     double localCbr = getLocalCbr();
     int neighborCount = countCurrentNeighbors();
     auto activeRange = getActiveCbrThresholdRange();
     double routeDiscoveryDelayAvgMs = metricsRouteDiscoveryDelayCount > 0 ? 1000.0 * metricsRouteDiscoveryDelaySum.dbl() / metricsRouteDiscoveryDelayCount : 0.0;
     double rrepBlockRate = metricsRrepCandidateCount > 0 ? (double)metricsRrepBlockedCount / metricsRrepCandidateCount : 0.0;
 
-    if (writeHeader) {
-        out << "time,node,localCbr,neighborCount,appliedLowThreshold,appliedHighThreshold,"
-               "routeDiscoveryStarted,routeDiscoverySucceeded,routeDiscoveryFailed,routeDiscoveryDelayAvgMs,"
-               "rreqReceived,rrepReceived,rrepCandidates,rrepAllowed,rrepBlocked,rrepBlockRate,"
-               "noRouteToForward,noActiveRouteToForward,"
-               "routeInvalidate,routeExpireInactive,routeDelete,rerrOriginated\n";
-    }
-
+    const std::string headerLine =
+            "time,node,localCbr,neighborCount,appliedLowThreshold,appliedHighThreshold,"
+            "routeDiscoveryStarted,routeDiscoverySucceeded,routeDiscoveryFailed,routeDiscoveryDelayAvgMs,"
+            "rreqReceived,rrepReceived,rrepCandidates,rrepAllowed,rrepBlocked,rrepBlockRate,"
+            "noRouteToForward,noActiveRouteToForward,"
+            "routeInvalidate,routeExpireInactive,routeDelete,rerrOriginated";
+    std::ostringstream out;
     out << simTime() << ","
         << getParentModule()->getFullName() << ","
         << localCbr << ","
@@ -2591,6 +2581,8 @@ void Aodv::logTransmissionFailureDiagnosis1s()
         << diagnosisRouteExpireInactiveCount << ","
         << diagnosisRouteDeleteCount << ","
         << diagnosisRerrOriginatedCount << "\n";
+
+    appendBufferedCsvLine("aodv_transmission_failure_diagnosis_1s.csv", headerLine, out.str());
 
     diagnosisNoRouteToForwardCount = 0;
     diagnosisNoActiveRouteToForwardCount = 0;
@@ -2634,8 +2626,6 @@ void Aodv::logRadioStateDiagnosis1s()
     int neighborCount = countCurrentNeighbors();
     auto activeRange = getActiveCbrThresholdRange();
 
-    std::filesystem::create_directories(pwd);
-    std::string filePath = pwd + "/aodv_radio_state_diagnosis_1s.csv";
     const std::string headerLine =
             "time,node,positionX,positionY,positionZ,localCbr,neighborCount,"
             "radioMode,receptionState,transmissionState,"
@@ -2645,11 +2635,7 @@ void Aodv::logRadioStateDiagnosis1s()
             "routeDiscoveryStarted,routeDiscoverySucceeded,routeDiscoveryFailed,"
             "rreqReceived,rrepReceived,rrepCandidates,rrepAllowed,rrepBlocked,"
             "rreqSentInLastSecond,rerrSentInLastSecond";
-    ensureCsvSchemaHeader(filePath, headerLine);
-    std::ofstream out(filePath, std::ios::app);
-    if (!out.is_open())
-        return;
-
+    std::ostringstream out;
     out << simTime() << ","
         << getParentModule()->getFullName() << ","
         << positionX << ","
@@ -2676,23 +2662,8 @@ void Aodv::logRadioStateDiagnosis1s()
         << metricsRrepBlockedCount << ","
         << rreqCount << ","
         << rerrCount << "\n";
-}
 
-void Aodv::ensureCbrRrepDecisionLogFile() const
-{
-    if (!cbrRrepDecisionLogEnabled || pwd.empty())
-        return;
-
-    std::filesystem::create_directories(pwd);
-    std::string filePath = pwd + "/aodv_cbr_rrep_decisions.csv";
-    bool writeHeader = !std::filesystem::exists(filePath) || std::filesystem::file_size(filePath) == 0;
-    if (!writeHeader)
-        return;
-
-    std::ofstream out(filePath, std::ios::app);
-    if (!out.is_open())
-        return;
-    out << "time,node,source,originator,destination,rreqId,hopCount,localCbr,appliedLowThreshold,appliedHighThreshold,decision\n";
+    appendBufferedCsvLine("aodv_radio_state_diagnosis_1s.csv", headerLine, out.str());
 }
 
 std::string Aodv::addressToNodeName(const L3Address& address) const
@@ -2709,12 +2680,8 @@ void Aodv::logCbrRrepDecision(const Ptr<Rreq>& rreq, const L3Address& sourceAddr
     if (!cbrRrepDecisionLogEnabled || pwd.empty())
         return;
 
-    ensureCbrRrepDecisionLogFile();
-    std::string filePath = pwd + "/aodv_cbr_rrep_decisions.csv";
-    std::ofstream out(filePath, std::ios::app);
-    if (!out.is_open())
-        return;
-
+    const std::string headerLine = "time,node,source,originator,destination,rreqId,hopCount,localCbr,appliedLowThreshold,appliedHighThreshold,decision";
+    std::ostringstream out;
     out << simTime() << ","
         << getParentModule()->getFullName() << ","
         << addressToNodeName(sourceAddr) << ","
@@ -2726,24 +2693,8 @@ void Aodv::logCbrRrepDecision(const Ptr<Rreq>& rreq, const L3Address& sourceAddr
         << appliedLowThreshold << ","
         << appliedHighThreshold << ","
         << decision << "\n";
-}
 
-void Aodv::ensureDlDirectThresholdRrepDebugLogFile() const
-{
-    if (!dlDirectThresholdRrepDebugLogEnabled || pwd.empty())
-        return;
-
-    std::filesystem::create_directories(pwd);
-    std::string filePath = pwd + "/aodv_dl_direct_threshold_debug.csv";
-    bool writeHeader = !std::filesystem::exists(filePath) || std::filesystem::file_size(filePath) == 0;
-    if (!writeHeader)
-        return;
-
-    std::ofstream out(filePath, std::ios::app);
-    if (!out.is_open())
-        return;
-
-    out << "time,node,source,originator,destination,rreqId,hopCount,localCbr,neighborCount,isDirectRoute,input0,input1,input2,input3,rawLow,rawHigh,predictedLow,predictedHigh,decision\n";
+    appendBufferedCsvLine("aodv_cbr_rrep_decisions.csv", headerLine, out.str());
 }
 
 void Aodv::logDlDirectThresholdRrepDebug(const Ptr<Rreq>& rreq, const L3Address& sourceAddr, double localCbr, int neighborCount, unsigned int hopCount, bool isDirectRouteToDestination, const std::vector<double>& inputs, const std::array<double, 2>& rawOutputs, double predictedLow, double predictedHigh, const char *decision) const
@@ -2751,12 +2702,8 @@ void Aodv::logDlDirectThresholdRrepDebug(const Ptr<Rreq>& rreq, const L3Address&
     if (!dlDirectThresholdRrepDebugLogEnabled || pwd.empty())
         return;
 
-    ensureDlDirectThresholdRrepDebugLogFile();
-    std::string filePath = pwd + "/aodv_dl_direct_threshold_debug.csv";
-    std::ofstream out(filePath, std::ios::app);
-    if (!out.is_open())
-        return;
-
+    const std::string headerLine = "time,node,source,originator,destination,rreqId,hopCount,localCbr,neighborCount,isDirectRoute,input0,input1,input2,input3,rawLow,rawHigh,predictedLow,predictedHigh,decision";
+    std::ostringstream out;
     out << simTime() << ","
         << getParentModule()->getFullName() << ","
         << sourceAddr << ","
@@ -2776,32 +2723,8 @@ void Aodv::logDlDirectThresholdRrepDebug(const Ptr<Rreq>& rreq, const L3Address&
         << predictedLow << ","
         << predictedHigh << ","
         << decision << "\n";
-}
 
-// Ground-truth discovery dataset file bootstrap.
-void Aodv::ensureGroundTruthDiscoveryLogFile() const
-{
-    if (!groundTruthDatasetLogEnabled || pwd.empty())
-        return;
-
-    std::filesystem::create_directories(pwd);
-    std::string filePath = pwd + "/aodv_ground_truth_discovery_log.csv";
-    ensureCsvSchemaHeader(filePath,
-            "time,node,nodeIndex,event,originator,destination,rreqId,matchedRreqId,peer,hopCount,labelHint,"
-            "pairedAcceptedTime,sourceDiscoveryStartTime,elapsedSincePaired,sourceRetryCount,note");
-}
-
-// Ground-truth maintenance dataset file bootstrap.
-void Aodv::ensureGroundTruthMaintenanceLogFile() const
-{
-    if (!groundTruthDatasetLogEnabled || pwd.empty())
-        return;
-
-    std::filesystem::create_directories(pwd);
-    std::string filePath = pwd + "/aodv_ground_truth_maintenance_log.csv";
-    ensureCsvSchemaHeader(filePath,
-            "time,node,nodeIndex,event,routeDest,nextHop,hopCount,isActive,lifeTime,routeFormedTime,"
-            "elapsedSinceRouteFormed,remainingLifetime,referenceLifetime,precursorCount,unreachableCount,reason,note");
+    appendBufferedCsvLine("aodv_dl_direct_threshold_debug.csv", headerLine, out.str());
 }
 
 // Ground-truth raw discovery event logging.
@@ -2813,13 +2736,12 @@ void Aodv::logGroundTruthDiscoveryEvent(const char *event, const L3Address& orig
     if (!groundTruthDatasetLogEnabled || pwd.empty())
         return;
 
-    ensureGroundTruthDiscoveryLogFile();
     cModule *nodeModule = getContainingNode(this);
     int nodeIndex = nodeModule != nullptr ? nodeModule->getIndex() : -1;
-    std::ofstream out(pwd + "/aodv_ground_truth_discovery_log.csv", std::ios::app);
-    if (!out.is_open())
-        return;
-
+    const std::string headerLine =
+            "time,node,nodeIndex,event,originator,destination,rreqId,matchedRreqId,peer,hopCount,labelHint,"
+            "pairedAcceptedTime,sourceDiscoveryStartTime,elapsedSincePaired,sourceRetryCount,note";
+    std::ostringstream out;
     out << simTime() << ","
         << getParentModule()->getFullName() << ","
         << nodeIndex << ","
@@ -2836,6 +2758,8 @@ void Aodv::logGroundTruthDiscoveryEvent(const char *event, const L3Address& orig
         << elapsedSincePaired << ","
         << sourceRetryCount << ","
         << (note != nullptr ? note : "") << "\n";
+
+    appendBufferedCsvLine("aodv_ground_truth_discovery_log.csv", headerLine, out.str());
 }
 
 // Ground-truth raw maintenance event logging.
@@ -2847,13 +2771,12 @@ void Aodv::logGroundTruthMaintenanceEvent(const char *event, const L3Address& ro
     if (!groundTruthDatasetLogEnabled || pwd.empty())
         return;
 
-    ensureGroundTruthMaintenanceLogFile();
     cModule *nodeModule = getContainingNode(this);
     int nodeIndex = nodeModule != nullptr ? nodeModule->getIndex() : -1;
-    std::ofstream out(pwd + "/aodv_ground_truth_maintenance_log.csv", std::ios::app);
-    if (!out.is_open())
-        return;
-
+    const std::string headerLine =
+            "time,node,nodeIndex,event,routeDest,nextHop,hopCount,isActive,lifeTime,routeFormedTime,"
+            "elapsedSinceRouteFormed,remainingLifetime,referenceLifetime,precursorCount,unreachableCount,reason,note";
+    std::ostringstream out;
     out << simTime() << ","
         << getParentModule()->getFullName() << ","
         << nodeIndex << ","
@@ -2871,6 +2794,8 @@ void Aodv::logGroundTruthMaintenanceEvent(const char *event, const L3Address& ro
         << unreachableCount << ","
         << (reason != nullptr ? reason : "") << ","
         << (note != nullptr ? note : "") << "\n";
+
+    appendBufferedCsvLine("aodv_ground_truth_maintenance_log.csv", headerLine, out.str());
 }
 
 void Aodv::logRouteCauseEvent(const char *event, const L3Address& routeDest, const L3Address& nextHop, unsigned int hopCount, bool isActive, simtime_t lifeTime, const char *reason) const
@@ -2878,16 +2803,8 @@ void Aodv::logRouteCauseEvent(const char *event, const L3Address& routeDest, con
     if (!cbrRouteCauseLogEnabled || pwd.empty())
         return;
 
-    std::filesystem::create_directories(pwd);
-    std::string filePath = pwd + "/aodv_route_cause_events.csv";
-    bool writeHeader = !std::filesystem::exists(filePath) || std::filesystem::file_size(filePath) == 0;
-    std::ofstream out(filePath, std::ios::app);
-    if (!out.is_open())
-        return;
-
-    if (writeHeader)
-        out << "time,node,event,routeDest,nextHop,hopCount,active,lifeTime,localCbr,reason\n";
-
+    const std::string headerLine = "time,node,event,routeDest,nextHop,hopCount,active,lifeTime,localCbr,reason";
+    std::ostringstream out;
     out << simTime() << ","
         << getParentModule()->getFullName() << ","
         << event << ","
@@ -2898,6 +2815,8 @@ void Aodv::logRouteCauseEvent(const char *event, const L3Address& routeDest, con
         << lifeTime << ","
         << getLocalCbr() << ","
         << reason << "\n";
+
+    appendBufferedCsvLine("aodv_route_cause_events.csv", headerLine, out.str());
 }
 
 void Aodv::handleRREQ(const Ptr<Rreq>& rreq, const L3Address& sourceAddr, unsigned int timeToLive)
@@ -3530,18 +3449,66 @@ void Aodv::appendAodvMetric(const std::string& fileName, const std::string& line
 {
     if (pwd.empty())
         return;
-    std::ofstream logFile(pwd + "/" + fileName, std::ios::app);
-    logFile << line << endl;
+    appendBufferedCsvLine(fileName, "", line);
 }
 
-void Aodv::ensureAodvControlLogFile() const
+void Aodv::registerBufferedCsvRun()
 {
-    if (!aodvControlLogEnabled || pwd.empty())
+    auto& run = bufferedCsvRuns[getSimulation()];
+    if (run.moduleCount == 0)
+        run.outputDirectory = pwd;
+    else if (run.outputDirectory != pwd)
+        throw cRuntimeError("Conflicting AODV CSV output directories: %s and %s", run.outputDirectory.c_str(), pwd.c_str());
+
+    run.moduleCount++;
+}
+
+void Aodv::appendBufferedCsvLine(const std::string& fileName, const std::string& headerLine, const std::string& line) const
+{
+    auto runIt = bufferedCsvRuns.find(getSimulation());
+    if (runIt == bufferedCsvRuns.end())
+        throw cRuntimeError("AODV CSV log buffer is not registered");
+
+    auto& log = runIt->second.logs[fileName];
+    if (log.headerLine.empty())
+        log.headerLine = headerLine;
+    else if (!headerLine.empty() && log.headerLine != headerLine)
+        throw cRuntimeError("Conflicting CSV headers for %s", fileName.c_str());
+
+    log.lines.append(line);
+    if (line.empty() || line.back() != '\n')
+        log.lines.push_back('\n');
+}
+
+void Aodv::flushBufferedCsvLogs()
+{
+    if (pwd.empty())
         return;
 
-    std::filesystem::create_directories(pwd);
-    std::string filePath = pwd + "/aodv_control_log.csv";
-    ensureCsvSchemaHeader(filePath, "time,node,event,source,target,originator,destination,rreqId,hopCount,ttl,retryCount,jitter,replyType,localCbr,appliedLowThreshold,appliedHighThreshold,destRouteNextHop,reverseRouteNextHop,packetSource,packetDestination,selfAddress,rawOriginatorIp,rawDestinationIp,resolvedOriginatorNode,resolvedDestinationNode,isSelfOriginatedDatagram");
+    auto runIt = bufferedCsvRuns.find(getSimulation());
+    if (runIt == bufferedCsvRuns.end())
+        return;
+
+    BufferedCsvRun& run = runIt->second;
+    if (--run.moduleCount > 0)
+        return;
+
+    std::filesystem::create_directories(run.outputDirectory);
+    for (const auto& entry : run.logs) {
+        const std::string& fileName = entry.first;
+        const BufferedCsvLog& log = entry.second;
+        if (log.lines.empty())
+            continue;
+
+        std::string filePath = run.outputDirectory + "/" + fileName;
+        if (!log.headerLine.empty())
+            ensureCsvSchemaHeader(filePath, log.headerLine);
+
+        std::ofstream out(filePath, std::ios::app);
+        if (out.is_open())
+            out << log.lines;
+    }
+    bufferedCsvRuns.erase(runIt);
 }
 
 void Aodv::logAodvControlEvent(const std::string& event, const std::string& source, const std::string& target, const std::string& originator, const std::string& destination, const std::string& rreqId, const std::string& hopCount, const std::string& ttl, const std::string& retryCount, const std::string& jitter, const std::string& replyType, const std::string& localCbr, const std::string& appliedLowThreshold, const std::string& appliedHighThreshold, const std::string& destRouteNextHop, const std::string& reverseRouteNextHop, const std::string& packetSource, const std::string& packetDestination, const std::string& rawOriginatorIp, const std::string& rawDestinationIp, const std::string& resolvedOriginatorNode, const std::string& resolvedDestinationNode, const std::string& isSelfOriginatedDatagram) const
@@ -3549,11 +3516,8 @@ void Aodv::logAodvControlEvent(const std::string& event, const std::string& sour
     if (!aodvControlLogEnabled || pwd.empty())
         return;
 
-    ensureAodvControlLogFile();
-    std::ofstream out(pwd + "/aodv_control_log.csv", std::ios::app);
-    if (!out.is_open())
-        return;
-
+    const std::string headerLine = "time,node,event,source,target,originator,destination,rreqId,hopCount,ttl,retryCount,jitter,replyType,localCbr,appliedLowThreshold,appliedHighThreshold,destRouteNextHop,reverseRouteNextHop,packetSource,packetDestination,selfAddress,rawOriginatorIp,rawDestinationIp,resolvedOriginatorNode,resolvedDestinationNode,isSelfOriginatedDatagram";
+    std::ostringstream out;
     out << simTime() << ","
         << getParentModule()->getFullName() << ","
         << event << ","
@@ -3580,6 +3544,8 @@ void Aodv::logAodvControlEvent(const std::string& event, const std::string& sour
         << resolvedOriginatorNode << ","
         << resolvedDestinationNode << ","
         << isSelfOriginatedDatagram << "\n";
+
+    appendBufferedCsvLine("aodv_control_log.csv", headerLine, out.str());
 }
 
 void Aodv::logPrecursorAddition(const char *reason, const L3Address& routeDest, const L3Address& precursor, const std::set<L3Address>& precursorList) const // @suppress("Member declaration not found")

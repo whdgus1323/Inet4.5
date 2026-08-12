@@ -36,6 +36,7 @@ namespace physicallayer {
 Define_Module(Radio);
 
 bool logFlag = false;
+std::map<cSimulation *, Radio::BufferedCbrRun> Radio::bufferedCbrRuns;
 /*
 std::string pwdP = "/L";
 std::string pwdD = "/D400";
@@ -80,6 +81,8 @@ void Radio::initialize(int stage)
         cbrLogEnabled = par("cbrLogEnabled").boolValue();
         cbrWindow = par("cbrWindow");
         cbrRecordStartTime = par("cbrRecordStartTime");
+        if (cbrLogEnabled && !pwd.empty())
+            registerBufferedCbrRun();
         switchTimer = new cMessage("switchTimer");
         transmissionTimer = new cMessage("transmissionTimer");
         cbrLastUpdateTime = simTime();
@@ -845,17 +848,6 @@ void Radio::writeCbrWindow(simtime_t windowStart, simtime_t busyTime)
     if (pwd.empty())
         return;
 
-    std::filesystem::create_directories(pwd);
-    std::string filePath = pwd + "/cbr.csv";
-    bool writeHeader = !std::filesystem::exists(filePath) || std::filesystem::file_size(filePath) == 0;
-    std::ofstream out(filePath, std::ios::app);
-    if (!out.is_open())
-        return;
-
-    if (writeHeader) {
-        out << "NodeId,WindowStart,WindowEnd,BusyTime,ChannelBusyPercentage\n";
-    }
-
     cModule *node = getContainingNode(this);
     int nodeId = node != nullptr ? node->getIndex() : -1;
     int percentage = (int)std::lround(100.0 * ratio);
@@ -864,11 +856,17 @@ void Radio::writeCbrWindow(simtime_t windowStart, simtime_t busyTime)
     if (percentage > 100)
         percentage = 100;
 
+    std::ostringstream out;
     out << nodeId << ","
         << windowStart << ","
         << (windowStart + cbrWindow) << ","
         << busyTime << ","
         << percentage << "\n";
+
+    auto runIt = bufferedCbrRuns.find(getSimulation());
+    if (runIt == bufferedCbrRuns.end())
+        throw cRuntimeError("CBR CSV log buffer is not registered");
+    runIt->second.lines.append(out.str());
 }
 
 void Radio::updateTransceiverState()
@@ -909,7 +907,45 @@ void Radio::finish()
 {
     if (cbrLogEnabled)
         advanceCbrTracking(simTime());
+    flushBufferedCbrLog();
     PhysicalLayerBase::finish();
+}
+
+void Radio::registerBufferedCbrRun()
+{
+    auto& run = bufferedCbrRuns[getSimulation()];
+    if (run.moduleCount == 0)
+        run.outputDirectory = pwd;
+    else if (run.outputDirectory != pwd)
+        throw cRuntimeError("Conflicting CBR CSV output directories: %s and %s", run.outputDirectory.c_str(), pwd.c_str());
+    run.moduleCount++;
+}
+
+void Radio::flushBufferedCbrLog()
+{
+    if (!cbrLogEnabled || pwd.empty())
+        return;
+
+    auto runIt = bufferedCbrRuns.find(getSimulation());
+    if (runIt == bufferedCbrRuns.end())
+        return;
+
+    BufferedCbrRun& run = runIt->second;
+    if (--run.moduleCount > 0)
+        return;
+
+    if (!run.lines.empty()) {
+        std::filesystem::create_directories(run.outputDirectory);
+        std::string filePath = run.outputDirectory + "/cbr.csv";
+        bool writeHeader = !std::filesystem::exists(filePath) || std::filesystem::file_size(filePath) == 0;
+        std::ofstream out(filePath, std::ios::app);
+        if (out.is_open()) {
+            if (writeHeader)
+                out << "NodeId,WindowStart,WindowEnd,BusyTime,ChannelBusyPercentage\n";
+            out << run.lines;
+        }
+    }
+    bufferedCbrRuns.erase(runIt);
 }
 
 void Radio::updateTransceiverPart()

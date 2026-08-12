@@ -81,6 +81,7 @@ simsignal_t PingApp::numLostSignal = registerSignal("numLost");
 simsignal_t PingApp::numOutOfOrderArrivalsSignal = registerSignal("numOutOfOrderArrivals");
 simsignal_t PingApp::pingTxSeqSignal = registerSignal("pingTxSeq");
 simsignal_t PingApp::pingRxSeqSignal = registerSignal("pingRxSeq");
+std::map<cSimulation *, PingApp::BufferedPingTraceRun> PingApp::bufferedPingTraceRuns;
 
 bool isStartTimeUpdated = false;
 
@@ -113,6 +114,8 @@ void PingApp::initialize(int stage)
          * 로그 저장 경로 지정
          */
         if (hasPar("pwd")) pwd = par("pwd").stdstringValue();
+        if (!pwd.empty())
+            registerBufferedPingTraceRun();
 
 
 
@@ -692,33 +695,9 @@ void PingApp::countPingResponse(int bytes, long seqNo, simtime_t rtt, bool isDup
 
 }
 
-void PingApp::ensurePingTraceLogFile() const
-{
-    if (pwd.empty())
-        return;
-
-    std::filesystem::create_directories(pwd);
-    std::string filePath = pwd + "/ping_trace_log.csv";
-    bool writeHeader = !std::filesystem::exists(filePath) || std::filesystem::file_size(filePath) == 0;
-    if (!writeHeader)
-        return;
-
-    std::ofstream out(filePath, std::ios::app);
-    if (!out.is_open())
-        return;
-
-    out << "time,node,event,seqNo,src,dest,peer,rttMs,isDuplicate,expectedReplySeqNo,lossCount,sentCount,receivedCount,"
-           "routeFound,routeNextHop,routeMetric,routeSourceType,routeInterface,note\n";
-}
-
 void PingApp::logPingTraceEvent(const char *event, long seqNo, const L3Address& peerAddr, simtime_t rtt, bool isDup, const char *note) const
 {
     if (pwd.empty())
-        return;
-
-    ensurePingTraceLogFile();
-    std::ofstream out(pwd + "/ping_trace_log.csv", std::ios::app);
-    if (!out.is_open())
         return;
 
     cModule *host = getContainingNode(this);
@@ -732,6 +711,7 @@ void PingApp::logPingTraceEvent(const char *event, long seqNo, const L3Address& 
     std::string routeSourceType = route != nullptr ? IRoute::sourceTypeName(route->getSourceType()) : "";
     std::string routeInterface = (route != nullptr && route->getInterface() != nullptr) ? route->getInterface()->getInterfaceName() : "";
 
+    std::ostringstream out;
     out << simTime() << ","
         << csvEscape(getFullPath()) << ","
         << csvEscape(event != nullptr ? event : "") << ","
@@ -751,6 +731,11 @@ void PingApp::logPingTraceEvent(const char *event, long seqNo, const L3Address& 
         << csvEscape(routeSourceType) << ","
         << csvEscape(routeInterface) << ","
         << csvEscape(note != nullptr ? note : "") << "\n";
+
+    auto runIt = bufferedPingTraceRuns.find(getSimulation());
+    if (runIt == bufferedPingTraceRuns.end())
+        throw cRuntimeError("Ping trace CSV log buffer is not registered");
+    runIt->second.lines.append(out.str());
 }
 
 std::vector<L3Address> PingApp::getAllAddresses()
@@ -795,6 +780,7 @@ void PingApp::finish()
     if (sendSeqNo == 0) {
         if (printPing)
             EV_DETAIL << getFullPath() << ": No pings sent, skipping recording statistics and printing results.\n";
+        flushBufferedPingTraceLog();
         return;
     }
 
@@ -841,5 +827,45 @@ void PingApp::finish()
 
 
     std::cout << "sent: " << sentCount << "   received: " << numPongs << "   PDR (%): " << 100 * ((double)numPongs / (double)sentCount) << endl;
+    flushBufferedPingTraceLog();
+}
+
+void PingApp::registerBufferedPingTraceRun()
+{
+    auto& run = bufferedPingTraceRuns[getSimulation()];
+    if (run.moduleCount == 0)
+        run.outputDirectory = pwd;
+    else if (run.outputDirectory != pwd)
+        throw cRuntimeError("Conflicting ping trace CSV output directories: %s and %s", run.outputDirectory.c_str(), pwd.c_str());
+    run.moduleCount++;
+}
+
+void PingApp::flushBufferedPingTraceLog()
+{
+    if (pwd.empty())
+        return;
+
+    auto runIt = bufferedPingTraceRuns.find(getSimulation());
+    if (runIt == bufferedPingTraceRuns.end())
+        return;
+
+    BufferedPingTraceRun& run = runIt->second;
+    if (--run.moduleCount > 0)
+        return;
+
+    if (!run.lines.empty()) {
+        std::filesystem::create_directories(run.outputDirectory);
+        std::string filePath = run.outputDirectory + "/ping_trace_log.csv";
+        bool writeHeader = !std::filesystem::exists(filePath) || std::filesystem::file_size(filePath) == 0;
+        std::ofstream out(filePath, std::ios::app);
+        if (out.is_open()) {
+            if (writeHeader) {
+                out << "time,node,event,seqNo,src,dest,peer,rttMs,isDuplicate,expectedReplySeqNo,lossCount,sentCount,receivedCount,"
+                       "routeFound,routeNextHop,routeMetric,routeSourceType,routeInterface,note\n";
+            }
+            out << run.lines;
+        }
+    }
+    bufferedPingTraceRuns.erase(runIt);
 }
 }

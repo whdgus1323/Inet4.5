@@ -35,7 +35,7 @@ namespace aodv {
 
 class INET_API Aodv : public RoutingProtocolBase, public NetfilterBase::HookBase, public UdpSocket::ICallback, public cListener
 {
-  protected:
+  public:
     /*
      * It implements a unique identifier for an arbitrary RREQ message
      * in the network. See: rreqsArrivalTime.
@@ -103,6 +103,20 @@ class INET_API Aodv : public RoutingProtocolBase, public NetfilterBase::HookBase
         }
     };
 
+    class INET_API BufferedCsvLog {
+      public:
+        std::string headerLine;
+        std::string lines;
+    };
+
+    class INET_API BufferedCsvRun {
+      public:
+        std::string outputDirectory;
+        int moduleCount = 0;
+        std::map<std::string, BufferedCsvLog> logs;
+    };
+
+  protected:
     // context
     const IL3AddressType *addressType = nullptr; // to support both Ipv4 and v6 addresses.
 
@@ -356,10 +370,12 @@ class INET_API Aodv : public RoutingProtocolBase, public NetfilterBase::HookBase
     std::map<L3Address, SourceDiscoveryRecord> pendingSourceDiscoveryRecords;
     std::map<L3Address, simtime_t> cbrRangeBlockedFollowupRreqSuppressionExpirations;
     std::map<RouteHistoryKey, simtime_t, RouteHistoryKeyCompare> routeFirstFormedTimes;
+    static std::map<cSimulation *, BufferedCsvRun> bufferedCsvRuns;
 
   protected:
     void handleMessageWhenUp(cMessage *msg) override;
     void initialize(int stage) override;
+    void finish() override;
     virtual int numInitStages() const override { return NUM_INIT_STAGES; }
 
     /* Route Discovery */
@@ -387,6 +403,9 @@ class INET_API Aodv : public RoutingProtocolBase, public NetfilterBase::HookBase
     void logRouteGraphEvent(const char *event, const L3Address& routeDest, const L3Address& nextHop, unsigned int hopCount, bool isActive, simtime_t lifeTime) const;
     void logRoutingTableSnapshot(const char *reason);
     void appendAodvMetric(const std::string& fileName, const std::string& line) const;
+    void registerBufferedCsvRun();
+    void appendBufferedCsvLine(const std::string& fileName, const std::string& headerLine, const std::string& line) const;
+    void flushBufferedCsvLogs();
     void logSummary1s();
     void logCbrRrepMetrics1s();
     void logTransmissionFailureDiagnosis1s();
@@ -395,17 +414,11 @@ class INET_API Aodv : public RoutingProtocolBase, public NetfilterBase::HookBase
     int countCurrentNeighbors() const;
     int getBdStationCount() const;
     double getCurrentNodeSpeed() const;
-    void ensureAodvControlLogFile() const;
     void logAodvControlEvent(const std::string& event, const std::string& source, const std::string& target, const std::string& originator, const std::string& destination, const std::string& rreqId, const std::string& hopCount, const std::string& ttl, const std::string& retryCount, const std::string& jitter, const std::string& replyType = "", const std::string& localCbr = "", const std::string& appliedLowThreshold = "", const std::string& appliedHighThreshold = "", const std::string& destRouteNextHop = "", const std::string& reverseRouteNextHop = "", const std::string& packetSource = "", const std::string& packetDestination = "", const std::string& rawOriginatorIp = "", const std::string& rawDestinationIp = "", const std::string& resolvedOriginatorNode = "", const std::string& resolvedDestinationNode = "", const std::string& isSelfOriginatedDatagram = "") const;
-    void ensureCbrRrepDecisionLogFile() const;
     std::string addressToNodeName(const L3Address& address) const;
     void logCbrRrepDecision(const Ptr<Rreq>& rreq, const L3Address& sourceAddr, double localCbr, const char *decision, double appliedLowThreshold, double appliedHighThreshold) const;
-    void ensureDlDirectThresholdRrepDebugLogFile() const;
     void logDlDirectThresholdRrepDebug(const Ptr<Rreq>& rreq, const L3Address& sourceAddr, double localCbr, int neighborCount, unsigned int hopCount, bool isDirectRouteToDestination, const std::vector<double>& inputs, const std::array<double, 2>& rawOutputs, double predictedLow, double predictedHigh, const char *decision) const;
     void logRouteCauseEvent(const char *event, const L3Address& routeDest, const L3Address& nextHop, unsigned int hopCount, bool isActive, simtime_t lifeTime, const char *reason) const;
-    // Ground-truth raw dataset logging helpers.
-    void ensureGroundTruthDiscoveryLogFile() const;
-    void ensureGroundTruthMaintenanceLogFile() const;
     void logGroundTruthDiscoveryEvent(const char *event, const L3Address& originator, const L3Address& destination, unsigned int rreqId,
             const L3Address& peer, unsigned int hopCount, int labelHint, const char *note,
             unsigned int matchedRreqId = 0, simtime_t pairedAcceptedTime = SIMTIME_ZERO,

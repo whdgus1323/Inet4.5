@@ -8,6 +8,7 @@
 #ifndef __INET_PINGAPP_H
 #define __INET_PINGAPP_H
 
+#include <map>
 #include "inet/applications/base/ApplicationBase.h"
 #include "inet/common/Protocol.h"
 #include "inet/common/lifecycle/LifecycleOperation.h"
@@ -31,6 +32,14 @@ namespace inet {
  */
 class INET_API PingApp : public ApplicationBase, public INetworkSocket::ICallback
 {
+  protected:
+    class BufferedPingTraceRun {
+      public:
+        std::string outputDirectory;
+        int moduleCount = 0;
+        std::string lines;
+    };
+
   protected:
     // parameters: for more details, see the corresponding NED parameters' documentation
     L3Address destAddr;
@@ -83,6 +92,7 @@ class INET_API PingApp : public ApplicationBase, public INetworkSocket::ICallbac
     long outOfOrderArrivalCount = 0; // number of responses which arrived too late
     long numPongs = 0; // number of received Ping requests
     long numDuplicatedPongs = 0; // number of duplicated Ping responses
+    static std::map<cSimulation *, BufferedPingTraceRun> bufferedPingTraceRuns;
 
   protected:
     virtual void initialize(int stage) override;
@@ -101,8 +111,9 @@ class INET_API PingApp : public ApplicationBase, public INetworkSocket::ICallbac
     virtual void sendPingRequest();
     virtual void processPingResponse(int identifier, int seqNumber, Packet *packet);
     virtual void countPingResponse(int bytes, long seqNo, simtime_t rtt, bool isDup, const L3Address& peerAddr);
-    virtual void ensurePingTraceLogFile() const;
     virtual void logPingTraceEvent(const char *event, long seqNo, const L3Address& peerAddr, simtime_t rtt, bool isDup, const char *note) const;
+    void registerBufferedPingTraceRun();
+    void flushBufferedPingTraceLog();
 
     // Lifecycle methods
     virtual void handleStartOperation(LifecycleOperation *operation) override;

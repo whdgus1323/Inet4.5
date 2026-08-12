@@ -8,6 +8,7 @@
 #ifndef __INET_RADIO_H
 #define __INET_RADIO_H
 
+#include <map>
 #include <string>
 
 #include "inet/common/ModuleRefByPar.h"
@@ -50,6 +51,13 @@ namespace physicallayer {
 class INET_API Radio : public PhysicalLayerBase, public virtual IRadio
 {
   protected:
+    class BufferedCbrRun {
+      public:
+        std::string outputDirectory;
+        int moduleCount = 0;
+        std::string lines;
+    };
+
     /**
      * An identifier which is globally unique for the whole lifetime of the
      * simulation among all radios.
@@ -106,6 +114,7 @@ class INET_API Radio : public PhysicalLayerBase, public virtual IRadio
     simtime_t cbrCurrentWindowStart = SIMTIME_ZERO;
     simtime_t cbrBusyTime = SIMTIME_ZERO;
     double cbrLastCompletedWindowRatio = 0.0;
+    static std::map<cSimulation *, BufferedCbrRun> bufferedCbrRuns;
     //@}
 
     /** Gates */
@@ -213,6 +222,8 @@ class INET_API Radio : public PhysicalLayerBase, public virtual IRadio
     virtual bool isChannelBusyForCbr() const;
     virtual void advanceCbrTracking(simtime_t targetTime);
     virtual void writeCbrWindow(simtime_t windowStart, simtime_t busyTime);
+    void registerBufferedCbrRun();
+    void flushBufferedCbrLog();
 
     virtual void updateTransceiverState();
     virtual void updateTransceiverPart();
